@@ -1,0 +1,129 @@
+I want you to act as a full-stack app UI/UX developer. Generate a **complete Food Delivery Application frontend** design and code plan with the following requirements. 
+
+The app should have **role-based login** and dashboards for Customer, Restaurant, Delivery Partner, and Admin.
+
+---
+
+## 1. User Roles & Dashboards
+
+1. **Customer**
+   - Sign Up / Login (Email, Phone OTP, optional Social Login)
+   - Dashboard shows: Restaurants list, Search/Filter, Menu browsing, Cart, Orders, Profile
+   - Features: 
+     - Place orders
+     - Payment integration
+     - Real-time order tracking with map
+     - Ratings & Reviews
+     - Notifications
+
+2. **Restaurant**
+   - Sign Up / Login (Admin approval required)
+   - Dashboard shows: Orders, Menu management, Analytics, Profile
+   - Features:
+     - Add/Edit/Delete menu items with images
+     - Set availability & prices
+     - Order management (Accept/Reject, Update Status)
+     - Reports (Sales, Popular Items)
+
+3. **Delivery Partner**
+   - Sign Up / Login (Admin approval required)
+   - Dashboard shows: Pending deliveries, Current orders, Earnings
+   - Features:
+     - Accept/Reject deliveries
+     - Map navigation to restaurant & customer
+     - Delivery OTP confirmation
+     - Earnings & delivery history
+
+4. **Admin**
+   - Login (Email/Password)
+   - Dashboard shows: User Management, Orders, Pricing & Commission, Reports, Promotions
+   - Features:
+     - Approve Restaurants & Delivery Partners
+     - Suspend/Ban Users
+     - Live order monitoring
+     - Revenue analytics & campaign management
+
+---
+
+## 2. Role-Based Authentication & Routing
+
+- Implement role-based login so that users are redirected to the correct dashboard after login.
+- Only approved users (Restaurant & Delivery Partner) can access dashboards.
+- Include JWT-based authentication with role claims.
+- Include password hashing and OTP verification for Customers.
+
+---
+
+## 3. Frontend Features (UI Components)
+
+1. **Login / Sign Up Screens**
+   - Role selection at signup
+   - Input validation for compulsory fields
+   - OTP verification for phone numbers
+   - Social login option for Customers
+
+2. **Customer UI**
+   - Home / Explore Page: Search bar, filters, restaurant list
+   - Menu Page: Item details, add-ons, customization, add to cart
+   - Cart & Checkout Page: Payment options, promo code
+   - Order Tracking Page: Live map with ETA, order status
+   - Profile Page: Address management, payment methods, preferences
+   - Notifications Panel
+
+3. **Restaurant UI**
+   - Dashboard: Summary of today’s orders
+   - Menu Management: CRUD operations, images, availability toggles
+   - Order Management: Accept/Reject, preparation status, ready for pickup
+   - Analytics: Sales reports, popular items, customer feedback
+   - Profile: Business info, operating hours
+
+4. **Delivery Partner UI**
+   - Dashboard: Pending/assigned orders
+   - Order Details: Pickup & drop-off locations, customer contact
+   - Map Navigation: Directions from restaurant to customer
+   - Earnings & History: Payment summary, completed deliveries
+
+5. **Admin UI**
+   - User Management: Approve/reject accounts, suspend/ban
+   - Orders: Live tracking, dispute resolution
+   - Pricing & Commissions: Delivery fee and commission setup
+   - Promotions: Create coupons and manage campaigns
+   - Reports: Revenue metrics, growth, and order volume
+
+---
+
+## 4. Advanced Features (Optional but Recommended)
+
+- AI-based recommendation for customers
+- Scheduled / pre-orders
+- Loyalty program
+- In-app chat/support
+- Contactless delivery option
+- Multi-language & multi-currency support
+- Subscription model for free delivery
+
+---
+
+## 5. Non-Functional Requirements (UI/UX)
+
+- Fast and responsive design (mobile-first)
+- Smooth animations for transitions
+- Clear error messages and validation
+- Secure authentication flows
+- Real-time updates for orders & tracking
+- High availability of dashboards
+
+---
+
+## 6. Output Requirements
+
+- Provide a **complete UI structure and components** for all roles
+- Use modern frontend frameworks like **Flutter, React Native, or React.js** with clean architecture
+- Include **role-based routing and access control**
+- Provide a **folder/component structure** for frontend
+- Include example **mock data or API placeholders** for dynamic rendering
+- Optional: Include **Excel / JSON / DB structure** for linking dashboards
+
+---
+
+Generate this **as a complete, production-ready UI blueprint** with code snippets, component breakdown, and role-based navigation flow. Include notes for compulsory vs optional fields in forms and admin approval logic.
