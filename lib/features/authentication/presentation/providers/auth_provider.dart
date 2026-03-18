@@ -1,8 +1,12 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
 import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../../data/models/auth_model.dart';
 import '../../data/models/user_role.dart';
+
+final ValueNotifier<AuthState> authRouterStateNotifier =
+    ValueNotifier<AuthState>(const AuthState());
 
 class _DemoAccount {
   final UserRole role;
@@ -52,9 +56,15 @@ class AuthNotifier extends StateNotifier<AuthState> {
         passwordHash: _hashPassword('1'),
       );
     }
+    authRouterStateNotifier.value = state;
   }
 
   final Map<String, _RegisteredAccount> _registeredAccounts = {};
+
+  void _setState(AuthState newState) {
+    state = newState;
+    authRouterStateNotifier.value = newState;
+  }
 
   String _hashPassword(String rawPassword) {
     return sha256.convert(utf8.encode(rawPassword)).toString();
@@ -62,7 +72,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Sign up user
   Future<void> signup(SignupRequest request) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _setState(state.copyWith(isLoading: true, error: null));
     try {
       // Simulate API call
       await Future.delayed(const Duration(seconds: 2));
@@ -91,23 +101,23 @@ class AuthNotifier extends StateNotifier<AuthState> {
         passwordHash: passwordHash,
       );
 
-      state = state.copyWith(
+      _setState(state.copyWith(
         isAuthenticated: true,
         isLoading: false,
         user: mockUser,
         successMessage: 'Account created successfully!',
-      );
+      ));
     } catch (e) {
-      state = state.copyWith(
+      _setState(state.copyWith(
         isLoading: false,
         error: e.toString(),
-      );
+      ));
     }
   }
 
   /// Login user
   Future<void> login(LoginRequest request) async {
-    state = state.copyWith(isLoading: true, error: null);
+    _setState(state.copyWith(isLoading: true, error: null));
     try {
       // Simulate API call
       await Future.delayed(const Duration(seconds: 2));
@@ -120,32 +130,32 @@ class AuthNotifier extends StateNotifier<AuthState> {
       final account = _registeredAccounts[normalizedEmail];
 
       if (account == null || account.passwordHash != normalizedPasswordHash) {
-        state = state.copyWith(
+        _setState(state.copyWith(
           isLoading: false,
           isAuthenticated: false,
           user: null,
           error: 'Invalid email or password',
-        );
+        ));
         return;
       }
 
-      state = state.copyWith(
+      _setState(state.copyWith(
         isAuthenticated: true,
         isLoading: false,
         user: account.user,
         successMessage: 'Logged in successfully!',
-      );
+      ));
     } catch (e) {
-      state = state.copyWith(
+      _setState(state.copyWith(
         isLoading: false,
         error: e.toString(),
-      );
+      ));
     }
   }
 
   /// Logout user
   void logout() {
-    state = const AuthState();
+    _setState(const AuthState());
   }
 
   void updateCustomerProfile({
@@ -181,11 +191,11 @@ class AuthNotifier extends StateNotifier<AuthState> {
       passwordHash: currentAccount.passwordHash,
     );
 
-    state = state.copyWith(
+    _setState(state.copyWith(
       user: updatedUser,
       successMessage: 'Profile updated successfully!',
       error: null,
-    );
+    ));
   }
 
   bool changePassword({
@@ -194,20 +204,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }) {
     final currentUser = state.user;
     if (currentUser == null) {
-      state = state.copyWith(error: 'User not authenticated.');
+      _setState(state.copyWith(error: 'User not authenticated.'));
       return false;
     }
 
     final email = currentUser.email.trim().toLowerCase();
     final account = _registeredAccounts[email];
     if (account == null) {
-      state = state.copyWith(error: 'Account not found.');
+      _setState(state.copyWith(error: 'Account not found.'));
       return false;
     }
 
     final currentPasswordHash = _hashPassword(currentPassword.trim());
     if (currentPasswordHash != account.passwordHash) {
-      state = state.copyWith(error: 'Current password is incorrect.');
+      _setState(state.copyWith(error: 'Current password is incorrect.'));
       return false;
     }
 
@@ -218,17 +228,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
       passwordHash: newPasswordHash,
     );
 
-    state = state.copyWith(
+    _setState(state.copyWith(
       user: updatedUser,
       successMessage: 'Password changed successfully!',
       error: null,
-    );
+    ));
     return true;
   }
 
   /// Clear messages
   void clearMessages() {
-    state = state.copyWith(error: null, successMessage: null);
+    _setState(state.copyWith(error: null, successMessage: null));
   }
 }
 

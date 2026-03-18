@@ -17,6 +17,23 @@ class RestaurantDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Safety check: prevent routing to admin if route params are invalid
+    if (restaurantId.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Restaurant')),
+        body: const Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.error_outline, size: 64, color: Colors.grey),
+              SizedBox(height: 16),
+              Text('Invalid restaurant ID provided'),
+            ],
+          ),
+        ),
+      );
+    }
+
     final restaurant = ref.watch(restaurantDetailProvider(restaurantId));
     final menuItems = ref.watch(restaurantMenuProvider(restaurantId));
     final isGuest = !ref.watch(authProvider).isAuthenticated;

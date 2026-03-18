@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
 
 import '../providers/restaurant_panel_provider.dart';
 
@@ -670,139 +671,160 @@ class _RestaurantProfileScreenState
         icon: const Icon(Icons.save_outlined),
         label: const Text('Save Changes'),
       ),
-      child: Form(
-        key: _formKey,
-        child: _PanelCard(
-          title: 'Restaurant Details',
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isNarrow = constraints.maxWidth < 560;
+      child: Column(
+        children: [
+          Form(
+            key: _formKey,
+            child: _PanelCard(
+              title: 'Restaurant Details',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 560;
 
-                  final image = ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      _imageController.text,
-                      width: 86,
-                      height: 86,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        width: 86,
-                        height: 86,
-                        color: const Color(0xFFFF6B35).withOpacity(0.15),
-                        child: const Icon(
-                          Icons.storefront_outlined,
-                          size: 32,
-                          color: Color(0xFFFF6B35),
+                      final image = ClipRRect(
+                        borderRadius: BorderRadius.circular(16),
+                        child: Image.network(
+                          _imageController.text,
+                          width: 86,
+                          height: 86,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 86,
+                            height: 86,
+                            color: const Color(0xFFFF6B35).withOpacity(0.15),
+                            child: const Icon(
+                              Icons.storefront_outlined,
+                              size: 32,
+                              color: Color(0xFFFF6B35),
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  );
+                      );
 
-                  final details = Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        profile.name,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleLarge
-                            ?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        profile.cuisine,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ],
-                  );
-
-                  if (isNarrow) {
-                    return Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        image,
-                        const SizedBox(height: 12),
-                        details,
-                      ],
-                    );
-                  }
-
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      image,
-                      const SizedBox(width: 16),
-                      Expanded(child: details),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 18),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final isNarrow = constraints.maxWidth < 780;
-                  if (isNarrow) {
-                    return Column(
-                      children: [
-                        _buildInput(_nameController, 'Restaurant Name'),
-                        _buildInput(_cuisineController, 'Cuisine'),
-                        _buildInput(_phoneController, 'Phone'),
-                        _buildInput(_emailController, 'Email'),
-                        _buildInput(_addressController, 'Address'),
-                        _buildInput(_hoursController, 'Operating Hours'),
-                      ],
-                    );
-                  }
-
-                  return Column(
-                    children: [
-                      Row(
+                      final details = Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                              child: _buildInput(
-                                  _nameController, 'Restaurant Name')),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child:
-                                  _buildInput(_cuisineController, 'Cuisine')),
+                          Text(
+                            profile.name,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          Text(
+                            profile.cuisine,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
                         ],
-                      ),
-                      Row(
+                      );
+
+                      if (isNarrow) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            image,
+                            const SizedBox(height: 12),
+                            details,
+                          ],
+                        );
+                      }
+
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                              child: _buildInput(_phoneController, 'Phone')),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: _buildInput(_emailController, 'Email')),
+                          image,
+                          const SizedBox(width: 16),
+                          Expanded(child: details),
                         ],
-                      ),
-                      Row(
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 18),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final isNarrow = constraints.maxWidth < 780;
+                      if (isNarrow) {
+                        return Column(
+                          children: [
+                            _buildInput(_nameController, 'Restaurant Name'),
+                            _buildInput(_cuisineController, 'Cuisine'),
+                            _buildInput(_phoneController, 'Phone'),
+                            _buildInput(_emailController, 'Email'),
+                            _buildInput(_addressController, 'Address'),
+                            _buildInput(_hoursController, 'Operating Hours'),
+                          ],
+                        );
+                      }
+
+                      return Column(
                         children: [
-                          Expanded(
-                              child:
-                                  _buildInput(_addressController, 'Address')),
-                          const SizedBox(width: 12),
-                          Expanded(
-                              child: _buildInput(
-                                  _hoursController, 'Operating Hours')),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: _buildInput(
+                                      _nameController, 'Restaurant Name')),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child: _buildInput(
+                                      _cuisineController, 'Cuisine')),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child:
+                                      _buildInput(_phoneController, 'Phone')),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child:
+                                      _buildInput(_emailController, 'Email')),
+                            ],
+                          ),
+                          Row(
+                            children: [
+                              Expanded(
+                                  child: _buildInput(
+                                      _addressController, 'Address')),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                  child: _buildInput(
+                                      _hoursController, 'Operating Hours')),
+                            ],
+                          ),
                         ],
-                      ),
-                    ],
-                  );
-                },
+                      );
+                    },
+                  ),
+                  _buildInput(_imageController, 'Image URL'),
+                  TextFormField(
+                    controller: _descriptionController,
+                    maxLines: 3,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                    validator: _requiredValidator,
+                  ),
+                ],
               ),
-              _buildInput(_imageController, 'Image URL'),
-              TextFormField(
-                controller: _descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(labelText: 'Description'),
-                validator: _requiredValidator,
-              ),
-            ],
+            ),
           ),
-        ),
+          const SizedBox(height: 12),
+          _PanelCard(
+            title: 'Account',
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(
+                Icons.logout,
+                color: Color(0xFFE53E3E),
+              ),
+              title: const Text('Logout'),
+              subtitle: const Text('Sign out from restaurant panel'),
+              trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+              onTap: _confirmAndLogout,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -846,6 +868,35 @@ class _RestaurantProfileScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Profile updated successfully')),
     );
+  }
+
+  Future<void> _confirmAndLogout() async {
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Logout'),
+        content: const Text('Are you sure you want to logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53E3E),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Logout'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldLogout == true && mounted) {
+      ref.read(authProvider.notifier).logout();
+      context.go('/login');
+    }
   }
 }
 
@@ -901,10 +952,19 @@ class RestaurantPanelScaffold extends StatelessWidget {
     );
 
     if (isMobile) {
+      final isOverviewRoute = currentRoute == '/admin/restaurant-panel';
       return Scaffold(
         appBar: AppBar(
           title: Text(title),
           elevation: 0,
+          automaticallyImplyLeading: false,
+          leading: isOverviewRoute
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => context.go('/admin/restaurant-panel'),
+                  tooltip: 'Back to Overview',
+                ),
         ),
         body: content,
         bottomNavigationBar: CurvedPanelBottomNav(
@@ -1123,7 +1183,7 @@ class RestaurantPanelSidebar extends ConsumerWidget {
                     ),
                     _SideItem(
                       icon: Icons.arrow_back,
-                      label: 'Back to App',
+                      label: 'Back to Home',
                       active: false,
                       collapsed: collapsed,
                       onTap: () => context.go('/'),

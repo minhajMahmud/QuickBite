@@ -17,6 +17,8 @@ import '../../features/admin_panel/presentation/pages/delivery_partner_screens.d
 // Authentication Screens
 import '../../features/authentication/presentation/pages/login_screen.dart';
 import '../../features/authentication/presentation/pages/signup_screen.dart';
+import '../../features/authentication/presentation/providers/auth_provider.dart';
+import '../../features/authentication/data/models/user_role.dart';
 
 /// Global navigation key
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -50,6 +52,76 @@ class AppRoutes {
   static final GoRouter router = GoRouter(
     navigatorKey: navigatorKey,
     initialLocation: home,
+    refreshListenable: authRouterStateNotifier,
+    redirect: (context, state) {
+      final authState = authRouterStateNotifier.value;
+      final isAuthenticated = authState.isAuthenticated;
+      final role = authState.user?.role ?? UserRole.guest;
+      final location = state.uri.path;
+
+      final isAuthPage = location == login || location == signup;
+      final isAdminRoute = location.startsWith('/admin');
+      final isDashboardRoute = location.startsWith('/dashboard');
+      final isRestaurantPanelRoute =
+          location.startsWith('/admin/restaurant-panel');
+      final isDeliveryRoute = location.startsWith('/admin/deliveries');
+
+      if (!isAuthenticated && (isAdminRoute || isDashboardRoute)) {
+        return login;
+      }
+
+      if (isAuthenticated && isAuthPage) {
+        switch (role) {
+          case UserRole.admin:
+            return adminDashboard;
+          case UserRole.restaurant:
+            return restaurantPanelOverview;
+          case UserRole.deliveryPartner:
+            return '/admin/deliveries';
+          case UserRole.customer:
+          case UserRole.guest:
+            return home;
+        }
+      }
+
+      if (isAuthenticated && isAdminRoute) {
+        switch (role) {
+          case UserRole.admin:
+            break;
+          case UserRole.restaurant:
+            if (!isRestaurantPanelRoute) {
+              return restaurantPanelOverview;
+            }
+            break;
+          case UserRole.deliveryPartner:
+            if (!isDeliveryRoute) {
+              return '/admin/deliveries';
+            }
+            break;
+          case UserRole.customer:
+          case UserRole.guest:
+            return home;
+        }
+      }
+
+      if (isAuthenticated && isDashboardRoute) {
+        if (role != UserRole.customer) {
+          switch (role) {
+            case UserRole.admin:
+              return adminDashboard;
+            case UserRole.restaurant:
+              return restaurantPanelOverview;
+            case UserRole.deliveryPartner:
+              return '/admin/deliveries';
+            case UserRole.customer:
+            case UserRole.guest:
+              return home;
+          }
+        }
+      }
+
+      return null;
+    },
     routes: [
       GoRoute(
         path: login,
@@ -73,9 +145,19 @@ class AppRoutes {
       ),
       GoRoute(
         path: restaurantDetail,
-        builder: (context, state) => RestaurantDetailScreen(
-          restaurantId: state.pathParameters['id'] ?? '',
-        ),
+        builder: (context, state) {
+          final restaurantId = state.pathParameters['id'] ?? '';
+          // Guard: ensure restaurantId is not empty before rendering
+          if (restaurantId.isEmpty) {
+            return Scaffold(
+              appBar: AppBar(title: const Text('Error')),
+              body: const Center(
+                child: Text('Invalid restaurant ID'),
+              ),
+            );
+          }
+          return RestaurantDetailScreen(restaurantId: restaurantId);
+        },
         name: 'restaurant-detail',
       ),
       GoRoute(
