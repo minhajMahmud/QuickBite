@@ -64,7 +64,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       case UserRole.restaurant:
         return '/admin/restaurant-panel';
       case UserRole.deliveryPartner:
-        return '/admin/deliveries';
+        return '/delivery-partner';
       case UserRole.admin:
         return '/admin';
       case UserRole.guest:

@@ -39,6 +39,9 @@ class AppRoutes {
   static const String userAddresses = '/dashboard/addresses';
   static const String userSettings = '/dashboard/settings';
   static const String adminDashboard = '/admin';
+  static const String deliveryPartnerDashboard = '/delivery-partner';
+  static const String deliveryPartnerEarnings = '/delivery-partner/earnings';
+  static const String deliveryPartnerSettings = '/delivery-partner/settings';
   static const String restaurantPanelOverview = '/admin/restaurant-panel';
   static const String restaurantPanelMenu = '/admin/restaurant-panel/menu';
   static const String restaurantPanelOrders = '/admin/restaurant-panel/orders';
@@ -62,11 +65,13 @@ class AppRoutes {
       final isAuthPage = location == login || location == signup;
       final isAdminRoute = location.startsWith('/admin');
       final isDashboardRoute = location.startsWith('/dashboard');
+      final isDeliveryPartnerRoute =
+          location.startsWith(deliveryPartnerDashboard);
       final isRestaurantPanelRoute =
           location.startsWith('/admin/restaurant-panel');
-      final isDeliveryRoute = location.startsWith('/admin/deliveries');
 
-      if (!isAuthenticated && (isAdminRoute || isDashboardRoute)) {
+      if (!isAuthenticated &&
+          (isAdminRoute || isDashboardRoute || isDeliveryPartnerRoute)) {
         return login;
       }
 
@@ -77,7 +82,7 @@ class AppRoutes {
           case UserRole.restaurant:
             return restaurantPanelOverview;
           case UserRole.deliveryPartner:
-            return '/admin/deliveries';
+            return deliveryPartnerDashboard;
           case UserRole.customer:
           case UserRole.guest:
             return home;
@@ -94,13 +99,26 @@ class AppRoutes {
             }
             break;
           case UserRole.deliveryPartner:
-            if (!isDeliveryRoute) {
-              return '/admin/deliveries';
-            }
-            break;
+            return deliveryPartnerDashboard;
           case UserRole.customer:
           case UserRole.guest:
             return home;
+        }
+      }
+
+      if (isAuthenticated && isDeliveryPartnerRoute) {
+        if (role != UserRole.deliveryPartner) {
+          switch (role) {
+            case UserRole.admin:
+              return adminDashboard;
+            case UserRole.restaurant:
+              return restaurantPanelOverview;
+            case UserRole.customer:
+            case UserRole.guest:
+              return home;
+            case UserRole.deliveryPartner:
+              break;
+          }
         }
       }
 
@@ -112,7 +130,7 @@ class AppRoutes {
             case UserRole.restaurant:
               return restaurantPanelOverview;
             case UserRole.deliveryPartner:
-              return '/admin/deliveries';
+              return deliveryPartnerDashboard;
             case UserRole.customer:
             case UserRole.guest:
               return home;
@@ -228,18 +246,6 @@ class AppRoutes {
             path: 'deliveries',
             builder: (context, state) => const DeliveryManagementScreen(),
             name: 'delivery-report',
-            routes: [
-              GoRoute(
-                path: 'earnings',
-                builder: (context, state) => const DeliveryEarningsScreen(),
-                name: 'delivery-earnings',
-              ),
-              GoRoute(
-                path: 'settings',
-                builder: (context, state) => const DeliverySettingsScreen(),
-                name: 'delivery-settings',
-              ),
-            ],
           ),
           GoRoute(
             path: 'coupons',
@@ -277,6 +283,43 @@ class AppRoutes {
                 name: 'restaurant-panel-profile',
               ),
             ],
+          ),
+        ],
+      ),
+      GoRoute(
+        path: deliveryPartnerDashboard,
+        builder: (context, state) => const DeliveryDashboardScreen(),
+        name: 'delivery-dashboard',
+        routes: [
+          GoRoute(
+            path: 'earnings',
+            builder: (context, state) => const DeliveryEarningsScreen(),
+            name: 'delivery-earnings',
+          ),
+          GoRoute(
+            path: 'orders',
+            builder: (context, state) => const DeliveryOrdersScreen(),
+            name: 'delivery-orders',
+          ),
+          GoRoute(
+            path: 'settings',
+            builder: (context, state) => const DeliverySettingsScreen(),
+            name: 'delivery-settings',
+          ),
+          GoRoute(
+            path: 'incoming-order',
+            builder: (context, state) => const IncomingOrderScreen(),
+            name: 'incoming-order',
+          ),
+          GoRoute(
+            path: 'decline-order',
+            builder: (context, state) => const DeclineOrderScreen(),
+            name: 'decline-order',
+          ),
+          GoRoute(
+            path: 'order-accepted',
+            builder: (context, state) => const OrderAcceptedScreen(),
+            name: 'order-accepted',
           ),
         ],
       ),

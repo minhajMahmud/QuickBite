@@ -58,7 +58,8 @@ class ActiveDelivery {
   final double estimatedEarning;
   final String pickupLocation;
   final String dropLocation;
-  final String status; // 'picked_up', 'in_transit', 'delivered'
+  final String
+      status; // 'picked_up', 'confirmed', 'in_transit', 'delivered', 'cancelled'
   final String? otp;
   final DateTime createdAt;
 
@@ -250,6 +251,30 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
     final updated = state.activeDeliveries.map((d) {
       if (d.id == deliveryId) {
         return d.copyWith(status: newStatus);
+      }
+      return d;
+    }).toList();
+
+    state = state.copyWith(activeDeliveries: updated);
+  }
+
+  /// Confirm order for delivery
+  void confirmDelivery(String deliveryId) {
+    final updated = state.activeDeliveries.map((d) {
+      if (d.id == deliveryId) {
+        return d.copyWith(status: 'confirmed');
+      }
+      return d;
+    }).toList();
+
+    state = state.copyWith(activeDeliveries: updated);
+  }
+
+  /// Cancel order for delivery
+  void cancelDelivery(String deliveryId) {
+    final updated = state.activeDeliveries.map((d) {
+      if (d.id == deliveryId) {
+        return d.copyWith(status: 'cancelled');
       }
       return d;
     }).toList();

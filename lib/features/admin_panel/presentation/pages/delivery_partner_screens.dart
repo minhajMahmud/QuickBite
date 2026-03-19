@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../presentation/providers/app_providers.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
 
 import '../providers/delivery_panel_provider.dart';
 
@@ -19,9 +20,27 @@ class DeliveryDashboardScreen extends ConsumerWidget {
     final weeklyData = ref.watch(weeklyEarningsDataProvider);
 
     return DeliveryPanelScaffold(
-      currentRoute: '/admin/deliveries',
-      title: 'Admin Delivery Report',
+      currentRoute: '/delivery-partner',
+      title: 'Delivery Partner Dashboard',
       subtitle: 'Weekly and detailed delivery analytics',
+      bottomButton: SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: () {
+            context.push('/delivery-partner/incoming-order');
+          },
+          icon: const Icon(Icons.local_shipping),
+          label: const Text('Take New Delivery'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+      ),
       child: Column(
         children: [
           // Report Summary Cards
@@ -67,6 +86,22 @@ class DeliveryDashboardScreen extends ConsumerWidget {
               title: 'Live Delivery Snapshot',
               child: _ActiveDeliveryCard(
                 delivery: state.activeDeliveries.first,
+                onConfirmOrder: () {
+                  ref
+                      .read(deliveryPanelProvider.notifier)
+                      .confirmDelivery(state.activeDeliveries.first.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Order confirmed.')),
+                  );
+                },
+                onCancelOrder: () {
+                  ref
+                      .read(deliveryPanelProvider.notifier)
+                      .cancelDelivery(state.activeDeliveries.first.id);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Order cancelled.')),
+                  );
+                },
                 onStatusChange: (newStatus) {
                   ref.read(deliveryPanelProvider.notifier).updateDeliveryStatus(
                       state.activeDeliveries.first.id, newStatus);
@@ -74,7 +109,25 @@ class DeliveryDashboardScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
-            _PendingDeliveriesList(deliveries: state.activeDeliveries),
+            _PendingDeliveriesList(
+              deliveries: state.activeDeliveries,
+              onConfirmOrder: (deliveryId) {
+                ref
+                    .read(deliveryPanelProvider.notifier)
+                    .confirmDelivery(deliveryId);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Order confirmed.')),
+                );
+              },
+              onCancelOrder: (deliveryId) {
+                ref
+                    .read(deliveryPanelProvider.notifier)
+                    .cancelDelivery(deliveryId);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Order cancelled.')),
+                );
+              },
+            ),
           ],
         ],
       ),
@@ -92,7 +145,7 @@ class DeliveryEarningsScreen extends ConsumerWidget {
     final weeklyData = ref.watch(weeklyEarningsDataProvider);
 
     return DeliveryPanelScaffold(
-      currentRoute: '/admin/deliveries',
+      currentRoute: '/delivery-partner/earnings',
       title: 'Earnings',
       subtitle: state.profile.name,
       child: Column(
@@ -132,7 +185,7 @@ class DeliverySettingsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(deliveryPanelProvider);
     return DeliveryPanelScaffold(
-      currentRoute: '/admin/deliveries',
+      currentRoute: '/delivery-partner/settings',
       title: 'Settings',
       subtitle: state.profile.name,
       child: SingleChildScrollView(
@@ -227,6 +280,278 @@ class DeliverySettingsScreen extends ConsumerWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Orders Screen - Shows all pending orders
+class DeliveryOrdersScreen extends ConsumerWidget {
+  const DeliveryOrdersScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(deliveryPanelProvider);
+
+    return DeliveryPanelScaffold(
+      currentRoute: '/delivery-partner/orders',
+      title: 'Pending Orders',
+      subtitle: 'Active delivery orders',
+      child: Column(
+        children: [
+          // Summary Stats
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.local_shipping,
+                          size: 24, color: Colors.blue),
+                      const SizedBox(height: 8),
+                      Text(
+                        state.activeDeliveries.length.toString(),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Total Orders',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.hourglass_empty,
+                          size: 24, color: Colors.orange),
+                      const SizedBox(height: 8),
+                      Text(
+                        state.activeDeliveries
+                            .where((d) => d.status == 'pending')
+                            .length
+                            .toString(),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Pending',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.check_circle,
+                          size: 24, color: Colors.green),
+                      const SizedBox(height: 8),
+                      Text(
+                        state.activeDeliveries
+                            .where((d) => d.status == 'confirmed')
+                            .length
+                            .toString(),
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Confirmed',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Colors.grey,
+                            ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 24),
+
+          // All Orders List
+          _PanelCard(
+            title: 'All Active Orders',
+            child: state.activeDeliveries.isEmpty
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(32),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.inbox_outlined,
+                            size: 64,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No active orders',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Start taking deliveries to see them here',
+                            style:
+                                Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: Colors.grey,
+                                    ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(label: Text('Order ID')),
+                        DataColumn(label: Text('Restaurant')),
+                        DataColumn(label: Text('Customer')),
+                        DataColumn(label: Text('Status')),
+                        DataColumn(label: Text('Earning')),
+                        DataColumn(label: Text('Actions')),
+                      ],
+                      rows: state.activeDeliveries.map((delivery) {
+                        final isConfirmed = delivery.status == 'confirmed';
+                        final isPending = delivery.status == 'pending';
+
+                        return DataRow(
+                          cells: [
+                            DataCell(Text(
+                              delivery.id,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w600),
+                            )),
+                            DataCell(Text(delivery.restaurantName)),
+                            DataCell(Text(delivery.customerName)),
+                            DataCell(
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: isConfirmed
+                                      ? Colors.green.withOpacity(0.1)
+                                      : isPending
+                                          ? Colors.orange.withOpacity(0.1)
+                                          : Colors.blue.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  delivery.status.toUpperCase(),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isConfirmed
+                                        ? Colors.green
+                                        : isPending
+                                            ? Colors.orange
+                                            : Colors.blue,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            DataCell(Text(
+                                '\$${delivery.estimatedEarning.toStringAsFixed(2)}')),
+                            DataCell(
+                              PopupMenuButton<String>(
+                                tooltip: 'Actions',
+                                onSelected: (value) {
+                                  if (value == 'confirm' && isPending) {
+                                    ref
+                                        .read(deliveryPanelProvider.notifier)
+                                        .confirmDelivery(delivery.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Order confirmed'),
+                                      ),
+                                    );
+                                  } else if (value == 'cancel') {
+                                    ref
+                                        .read(deliveryPanelProvider.notifier)
+                                        .cancelDelivery(delivery.id);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Order cancelled'),
+                                      ),
+                                    );
+                                  }
+                                },
+                                itemBuilder: (context) => [
+                                  if (isPending)
+                                    const PopupMenuItem(
+                                      value: 'confirm',
+                                      child: Row(
+                                        children: [
+                                          Icon(Icons.check, size: 18),
+                                          SizedBox(width: 8),
+                                          Text('Confirm'),
+                                        ],
+                                      ),
+                                    ),
+                                  const PopupMenuItem(
+                                    value: 'cancel',
+                                    child: Row(
+                                      children: [
+                                        Icon(Icons.close,
+                                            size: 18, color: Colors.red),
+                                        SizedBox(width: 8),
+                                        Text('Cancel',
+                                            style:
+                                                TextStyle(color: Colors.red)),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                                child: const Icon(Icons.more_vert),
+                              ),
+                            ),
+                          ],
+                        );
+                      }).toList(),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -332,10 +657,14 @@ class _StatCard extends StatelessWidget {
 
 class _ActiveDeliveryCard extends StatelessWidget {
   final ActiveDelivery delivery;
+  final VoidCallback onConfirmOrder;
+  final VoidCallback onCancelOrder;
   final Function(String) onStatusChange;
 
   const _ActiveDeliveryCard({
     required this.delivery,
+    required this.onConfirmOrder,
+    required this.onCancelOrder,
     required this.onStatusChange,
   });
 
@@ -459,6 +788,34 @@ class _ActiveDeliveryCard extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
+                        onPressed: onConfirmOrder,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                        ),
+                        child: const Text(
+                          'Confirm Order',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: onCancelOrder,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.redAccent,
+                        ),
+                        child: const Text(
+                          'Cancel Order',
+                          style: TextStyle(color: Colors.white),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
                         onPressed: () {
                           onStatusChange('delivered');
                         },
@@ -481,6 +838,32 @@ class _ActiveDeliveryCard extends StatelessWidget {
                     child: OutlinedButton(
                       onPressed: () {},
                       child: const Text('Call Customer'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onConfirmOrder,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                      ),
+                      child: const Text(
+                        'Confirm',
+                        style: TextStyle(color: Colors.white),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: onCancelOrder,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.redAccent,
+                      ),
+                      child: const Text(
+                        'Cancel',
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -586,8 +969,14 @@ class _WeeklyEarningsChart extends StatelessWidget {
 
 class _PendingDeliveriesList extends StatelessWidget {
   final List<ActiveDelivery> deliveries;
+  final void Function(String deliveryId) onConfirmOrder;
+  final void Function(String deliveryId) onCancelOrder;
 
-  const _PendingDeliveriesList({required this.deliveries});
+  const _PendingDeliveriesList({
+    required this.deliveries,
+    required this.onConfirmOrder,
+    required this.onCancelOrder,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -669,6 +1058,47 @@ class _PendingDeliveriesList extends StatelessWidget {
                             ),
                           ),
                         ),
+                        const SizedBox(height: 6),
+                        PopupMenuButton<String>(
+                          tooltip: 'Order actions',
+                          onSelected: (value) {
+                            if (value == 'confirm') {
+                              onConfirmOrder(delivery.id);
+                            } else if (value == 'cancel') {
+                              onCancelOrder(delivery.id);
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                              value: 'confirm',
+                              child: Text('Confirm Order'),
+                            ),
+                            PopupMenuItem(
+                              value: 'cancel',
+                              child: Text('Cancel Order'),
+                            ),
+                          ],
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              border: Border.all(
+                                color: Colors.grey.withOpacity(0.35),
+                              ),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.more_vert, size: 16),
+                                SizedBox(width: 4),
+                                Text('Menu'),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     );
 
@@ -697,10 +1127,14 @@ class _PendingDeliveriesList extends StatelessWidget {
     switch (status) {
       case 'picked_up':
         return Colors.blue;
+      case 'confirmed':
+        return Colors.green;
       case 'in_transit':
         return Colors.orange;
       case 'delivered':
         return Colors.green;
+      case 'cancelled':
+        return Colors.redAccent;
       default:
         return Colors.grey;
     }
@@ -1015,6 +1449,7 @@ class DeliveryPanelScaffold extends StatelessWidget {
   final String subtitle;
   final Widget child;
   final Widget? action;
+  final Widget? bottomButton;
 
   const DeliveryPanelScaffold({
     Key? key,
@@ -1023,6 +1458,7 @@ class DeliveryPanelScaffold extends StatelessWidget {
     required this.subtitle,
     required this.child,
     this.action,
+    this.bottomButton,
   }) : super(key: key);
 
   @override
@@ -1062,6 +1498,20 @@ class DeliveryPanelScaffold extends StatelessWidget {
           ),
         ),
         body: content,
+        bottomNavigationBar: bottomButton != null
+            ? Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(
+                      color: theme.dividerColor,
+                      width: 1,
+                    ),
+                  ),
+                ),
+                child: bottomButton,
+              )
+            : null,
       );
     }
 
@@ -1077,6 +1527,20 @@ class DeliveryPanelScaffold extends StatelessWidget {
           ),
         ],
       ),
+      bottomNavigationBar: bottomButton != null
+          ? Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(
+                    color: theme.dividerColor,
+                    width: 1,
+                  ),
+                ),
+              ),
+              child: bottomButton,
+            )
+          : null,
     );
   }
 }
@@ -1177,7 +1641,7 @@ class DeliveryPanelSidebar extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: const Text(
-                        'ADMIN DELIVERY',
+                        'DELIVERY PARTNER',
                         style: TextStyle(
                           color: Color(0xFFFF7A00),
                           fontWeight: FontWeight.w700,
@@ -1191,7 +1655,15 @@ class DeliveryPanelSidebar extends ConsumerWidget {
                 context: context,
                 icon: Icons.dashboard_outlined,
                 label: 'Delivery Report',
-                route: '/admin/deliveries',
+                route: '/delivery-partner',
+                currentRoute: currentRoute,
+                collapsed: collapsed,
+              ),
+              _buildNavItem(
+                context: context,
+                icon: Icons.list_alt_outlined,
+                label: 'Orders',
+                route: '/delivery-partner/orders',
                 currentRoute: currentRoute,
                 collapsed: collapsed,
               ),
@@ -1199,7 +1671,7 @@ class DeliveryPanelSidebar extends ConsumerWidget {
                 context: context,
                 icon: Icons.trending_up,
                 label: 'Earnings',
-                route: '/admin/deliveries/earnings',
+                route: '/delivery-partner/earnings',
                 currentRoute: currentRoute,
                 collapsed: collapsed,
               ),
@@ -1207,7 +1679,7 @@ class DeliveryPanelSidebar extends ConsumerWidget {
                 context: context,
                 icon: Icons.settings_outlined,
                 label: 'Settings',
-                route: '/admin/deliveries/settings',
+                route: '/delivery-partner/settings',
                 currentRoute: currentRoute,
                 collapsed: collapsed,
               ),
@@ -1259,6 +1731,32 @@ class DeliveryPanelSidebar extends ConsumerWidget {
                           'Back Home',
                           style: TextStyle(
                               color: theme.textTheme.bodyMedium?.color),
+                        ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: ElevatedButton(
+                  onPressed: () {
+                    ref.read(authProvider.notifier).logout();
+                    if (compact && Navigator.of(context).canPop()) {
+                      Navigator.of(context).pop();
+                    }
+                    context.go('/login');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.withOpacity(0.12),
+                    minimumSize: const Size(double.infinity, 48),
+                    elevation: 0,
+                  ),
+                  child: collapsed
+                      ? const Icon(Icons.logout, color: Colors.redAccent)
+                      : const Text(
+                          'Logout',
+                          style: TextStyle(
+                            color: Colors.redAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                 ),
               ),
@@ -1427,6 +1925,775 @@ class _PanelCard extends StatelessWidget {
             child: child,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Incoming Order Screen - Shows order details with Accept/Decline options
+class IncomingOrderScreen extends StatelessWidget {
+  const IncomingOrderScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: BackButton(
+          onPressed: () => context.pop(),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: CircleAvatar(
+              radius: 24,
+              backgroundColor: Colors.blue,
+              child: Text(
+                'DP',
+                style: theme.textTheme.labelLarge?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage(
+              'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
+            ),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Container(color: Colors.black.withOpacity(0.3)),
+            SafeArea(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const SizedBox(height: 20),
+                      Card(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Text(
+                                      '45s',
+                                      style: TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.blue,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 16),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'INCOMING ORDER',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: Colors.grey,
+                                            letterSpacing: 1,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          'Priority Express',
+                                          style: theme.textTheme.headlineSmall
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text(
+                                        'EXPECTED PAY',
+                                        style: theme.textTheme.labelSmall
+                                            ?.copyWith(
+                                          color: Colors.grey,
+                                          letterSpacing: 1,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '\.50',
+                                        style: theme.textTheme.headlineSmall
+                                            ?.copyWith(
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 24),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildInfoCard(
+                                        context,
+                                        Icons.straighten,
+                                        '2.4 mi',
+                                        'TOTAL TRIP',
+                                        theme),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildInfoCard(
+                                        context,
+                                        Icons.schedule,
+                                        '8 min',
+                                        'EST. TIME',
+                                        theme),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Card(
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.blue.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.storefront,
+                                      color: Colors.blue,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'PICKUP LOCATION',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: Colors.grey,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          "Joe's Pizza",
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          '452 Broadway, Midtown',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.location_on,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'DROP OFF',
+                                          style: theme.textTheme.labelSmall
+                                              ?.copyWith(
+                                            color: Colors.grey,
+                                            letterSpacing: 0.5,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '123 Maple St',
+                                          style: theme.textTheme.bodyLarge
+                                              ?.copyWith(
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Text(
+                                          'Suite 4B, Residential Heights',
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            context.push('/delivery-partner/order-accepted');
+                          },
+                          icon: const Icon(Icons.arrow_forward),
+                          label: const Text('Accept Delivery'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 56,
+                        child: OutlinedButton(
+                          onPressed: () {
+                            context.push('/delivery-partner/decline-order');
+                          },
+                          style: OutlinedButton.styleFrom(
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                          child: const Text(
+                            'DECLINE ORDER',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildInfoCard(BuildContext context, IconData icon,
+      String value, String label, ThemeData theme) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.withOpacity(0.1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Icon(icon, color: Colors.blue, size: 28),
+          const SizedBox(height: 8),
+          Text(value,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 4),
+          Text(label,
+              style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+}
+
+/// Decline Order Screen
+class DeclineOrderScreen extends StatefulWidget {
+  const DeclineOrderScreen({Key? key}) : super(key: key);
+
+  @override
+  State<DeclineOrderScreen> createState() => _DeclineOrderScreenState();
+}
+
+class _DeclineOrderScreenState extends State<DeclineOrderScreen> {
+  String? _selectedReason;
+  final _otherReasonController = TextEditingController();
+
+  final List<Map<String, dynamic>> _declineReasons = [
+    {'id': 'too_far', 'icon': Icons.location_on, 'label': 'Too far'},
+    {'id': 'closed', 'icon': Icons.storefront, 'label': 'Store is closed'},
+    {'id': 'low_pay', 'icon': Icons.monetization_on, 'label': 'Low pay'},
+    {'id': 'emergency', 'icon': Icons.emergency, 'label': 'Emergency'},
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: BackButton(onPressed: () => context.pop()),
+        title: Text(
+          'Velocity Delivery',
+          style:
+              theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+        ),
+        centerTitle: false,
+        actions: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: CircleAvatar(
+              radius: 20,
+              backgroundColor: Colors.blue,
+              child: Text(
+                'DP',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.red.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.warning,
+                          color: Colors.white, size: 20),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'ACTION REQUIRED',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.red,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Declining Order #8829',
+                            style: theme.textTheme.bodyMedium?.copyWith(
+                              color: Colors.red.shade800,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Please provide a reason for rejecting this delivery.',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: Colors.red.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'SELECT REASON',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Column(
+                children: _declineReasons.map((reason) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _selectedReason = reason['id'] as String;
+                        });
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: _selectedReason == reason['id']
+                              ? Colors.blue.withOpacity(0.1)
+                              : Colors.grey.withOpacity(0.05),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _selectedReason == reason['id']
+                                ? Colors.blue
+                                : Colors.grey.withOpacity(0.2),
+                            width: _selectedReason == reason['id'] ? 2 : 1,
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.blue.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(reason['icon'] as IconData,
+                                  color: Colors.blue),
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              reason['label'] as String,
+                              style: theme.textTheme.bodyMedium?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const Spacer(),
+                            Radio<String>(
+                              value: reason['id'] as String,
+                              groupValue: _selectedReason,
+                              onChanged: (value) {
+                                setState(() {
+                                  _selectedReason = value;
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'OTHER REASON',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _otherReasonController,
+                maxLines: 4,
+                decoration: InputDecoration(
+                  hintText: 'Please specify your reason here...',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey.withOpacity(0.2)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: ElevatedButton(
+                  onPressed: () {
+                    context.pop();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Confirm Rejection',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: OutlinedButton(
+                  onPressed: () {
+                    context.pop();
+                  },
+                  style: OutlinedButton.styleFrom(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    side: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                  ),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _otherReasonController.dispose();
+    super.dispose();
+  }
+}
+
+/// Order Accepted Screen
+class OrderAcceptedScreen extends StatelessWidget {
+  const OrderAcceptedScreen({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: NetworkImage(
+              'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
+            ),
+            fit: BoxFit.cover,
+          ),
+        ),
+        child: Stack(
+          children: [
+            Container(color: Colors.black.withOpacity(0.4)),
+            SafeArea(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Velocity Delivery',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue,
+                          ),
+                        ),
+                        CircleAvatar(
+                          radius: 20,
+                          backgroundColor: Colors.blue,
+                          child: Text(
+                            'DP',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Column(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(24),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[300],
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 64,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Order Accepted!',
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        "Great news! You've successfully\nsecured this delivery.",
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: Colors.grey[300],
+                        ),
+                      ),
+                    ],
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      children: [
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Navigation started')),
+                              );
+                            },
+                            icon: const Icon(Icons.navigation),
+                            label: const Text('Start Navigation'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 56,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text('Viewing pickup details')),
+                              );
+                            },
+                            icon: const Icon(Icons.info_outline),
+                            label: const Text('View Pickup Details'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.blue,
+                              side: const BorderSide(color: Colors.blue),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.red.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.warning,
+                              color: Colors.red, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Safety first: Please ensure you are parked safely.',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: Colors.red,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

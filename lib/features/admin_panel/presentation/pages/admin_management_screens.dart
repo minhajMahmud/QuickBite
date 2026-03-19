@@ -162,236 +162,443 @@ class RestaurantManagementScreen extends StatelessWidget {
 }
 
 /// Delivery Management Screen
-class DeliveryManagementScreen extends StatelessWidget {
+class DeliveryManagementScreen extends StatefulWidget {
   const DeliveryManagementScreen({Key? key}) : super(key: key);
+
+  @override
+  State<DeliveryManagementScreen> createState() =>
+      _DeliveryManagementScreenState();
+}
+
+class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
+  final List<_DeliveryPartnerAccount> _accounts = [
+    _DeliveryPartnerAccount(
+      name: 'Mike Reynolds',
+      email: 'mike.reynolds@quickbite.com',
+      rating: 4.9,
+      deliveries: 2340,
+      isActive: true,
+      isSuspended: false,
+    ),
+    _DeliveryPartnerAccount(
+      name: 'Sarah Kim',
+      email: 'sarah.kim@quickbite.com',
+      rating: 4.8,
+      deliveries: 1890,
+      isActive: true,
+      isSuspended: false,
+    ),
+    _DeliveryPartnerAccount(
+      name: 'Carlos Mendez',
+      email: 'carlos.mendez@quickbite.com',
+      rating: 4.7,
+      deliveries: 1560,
+      isActive: false,
+      isSuspended: false,
+    ),
+    _DeliveryPartnerAccount(
+      name: 'Priya Sharma',
+      email: 'priya.sharma@quickbite.com',
+      rating: 4.9,
+      deliveries: 2100,
+      isActive: true,
+      isSuspended: false,
+    ),
+  ];
+
+  Future<void> _showAddAccountDialog() async {
+    final nameController = TextEditingController();
+    final emailController = TextEditingController();
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Add Delivery Partner'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Full Name',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final email = emailController.text.trim().toLowerCase();
+                if (name.isEmpty || email.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Name and email are required.'),
+                    ),
+                  );
+                  return;
+                }
+
+                setState(() {
+                  _accounts.insert(
+                    0,
+                    _DeliveryPartnerAccount(
+                      name: name,
+                      email: email,
+                      rating: 0,
+                      deliveries: 0,
+                      isActive: true,
+                      isSuspended: false,
+                    ),
+                  );
+                });
+
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Delivery partner account added.'),
+                  ),
+                );
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+
+    nameController.dispose();
+    emailController.dispose();
+  }
+
+  Future<void> _removeAccount(int index) async {
+    final account = _accounts[index];
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Remove account'),
+          content: Text(
+            'Delete ${account.name} (${account.email})?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Delete'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDelete != true) return;
+
+    setState(() {
+      _accounts.removeAt(index);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Delivery partner account removed.')),
+    );
+  }
+
+  void _toggleActive(int index) {
+    final account = _accounts[index];
+    if (account.isSuspended) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unsuspend account first before activating.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _accounts[index] = account.copyWith(isActive: !account.isActive);
+    });
+  }
+
+  void _toggleSuspended(int index) {
+    final account = _accounts[index];
+    final nextSuspended = !account.isSuspended;
+    setState(() {
+      _accounts[index] = account.copyWith(
+        isSuspended: nextSuspended,
+        isActive: nextSuspended ? false : account.isActive,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final isMobile = MediaQuery.of(context).size.width < 900;
-    final agents = [
-      {
-        'name': 'Mike Reynolds',
-        'rating': 4.9,
-        'status': 'Delivering',
-        'deliveries': 2340
-      },
-      {
-        'name': 'Sarah Kim',
-        'rating': 4.8,
-        'status': 'Online',
-        'deliveries': 1890
-      },
-      {
-        'name': 'Carlos Mendez',
-        'rating': 4.7,
-        'status': 'Delivering',
-        'deliveries': 1560
-      },
-      {
-        'name': 'Priya Sharma',
-        'rating': 4.9,
-        'status': 'Online',
-        'deliveries': 2100
-      },
-      {
-        'name': 'Tom Anderson',
-        'rating': 4.5,
-        'status': 'Offline',
-        'deliveries': 980
-      },
-      {
-        'name': 'Lisa Wang',
-        'rating': 4.6,
-        'status': 'Online',
-        'deliveries': 1340
-      },
-      {
-        'name': 'Jake Morrison',
-        'rating': 4.4,
-        'status': 'Offline',
-        'deliveries': 720
-      },
-      {
-        'name': 'Ana Rodriguez',
-        'rating': 4.8,
-        'status': 'Delivering',
-        'deliveries': 1670
-      },
-    ];
+    final totalAccounts = _accounts.length;
+    final activeAccounts = _accounts.where((a) => a.isActive).length;
+    final suspendedAccounts = _accounts.where((a) => a.isSuspended).length;
 
-    final onlineAgents = agents
-        .where((a) => a['status'] == 'Online' || a['status'] == 'Delivering')
-        .length;
-
-    final content = CustomScrollView(
-      slivers: [
-        SliverAppBar(
-          automaticallyImplyLeading: isMobile,
-          floating: true,
-          backgroundColor: theme.cardColor,
-          elevation: 0,
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return _AdminPageScaffold(
+      currentRoute: '/admin/deliveries',
+      title: 'Delivery Partner Accounts',
+      floatingActionButton: FloatingActionButton(
+        onPressed: _showAddAccountDialog,
+        heroTag: 'admin-delivery-accounts-fab',
+        child: const Icon(Icons.person_add_alt_1),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _AccountSummaryCard(
+                icon: Icons.people_outline,
+                label: 'Total Accounts',
+                value: '$totalAccounts',
+              ),
+              _AccountSummaryCard(
+                icon: Icons.check_circle_outline,
+                label: 'Active',
+                value: '$activeAccounts',
+                valueColor: Colors.green,
+              ),
+              _AccountSummaryCard(
+                icon: Icons.block_outlined,
+                label: 'Suspended',
+                value: '$suspendedAccounts',
+                valueColor: Colors.redAccent,
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          Row(
             children: [
               Text(
-                'Delivery Management',
+                'Manage Delivery Partner Accounts',
                 style: theme.textTheme.titleLarge?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
-              Text(
-                '$onlineAgents agents online',
-                style: theme.textTheme.bodySmall,
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _showAddAccountDialog,
+                icon: const Icon(Icons.add),
+                label: const Text('Add Account'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (_accounts.isEmpty)
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  'No delivery partner accounts yet.',
+                  style:
+                      theme.textTheme.bodyLarge?.copyWith(color: Colors.grey),
+                ),
+              ),
+            )
+          else
+            ...List.generate(_accounts.length, (index) {
+              final account = _accounts[index];
+              final statusColor = account.isSuspended
+                  ? Colors.redAccent
+                  : account.isActive
+                      ? Colors.green
+                      : Colors.grey;
+              final statusLabel = account.isSuspended
+                  ? 'Suspended'
+                  : account.isActive
+                      ? 'Active'
+                      : 'Inactive';
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  leading: CircleAvatar(
+                    backgroundColor: Colors.orange.withOpacity(0.12),
+                    child: Text(
+                      account.name.isNotEmpty
+                          ? account.name[0].toUpperCase()
+                          : '?',
+                    ),
+                  ),
+                  title: Text(account.name),
+                  subtitle: Text(
+                    '${account.email}\n${account.deliveries} deliveries • ★ ${account.rating.toStringAsFixed(1)}',
+                  ),
+                  isThreeLine: true,
+                  trailing: PopupMenuButton<String>(
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'toggle_active':
+                          _toggleActive(index);
+                          break;
+                        case 'toggle_suspend':
+                          _toggleSuspended(index);
+                          break;
+                        case 'remove':
+                          _removeAccount(index);
+                          break;
+                      }
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem(
+                        value: 'toggle_active',
+                        child: Text(
+                          account.isActive ? 'Deactivate' : 'Activate',
+                        ),
+                      ),
+                      PopupMenuItem(
+                        value: 'toggle_suspend',
+                        child: Text(
+                          account.isSuspended ? 'Unsuspend' : 'Suspend',
+                        ),
+                      ),
+                      const PopupMenuDivider(),
+                      const PopupMenuItem(
+                        value: 'remove',
+                        child: Text('Remove Account'),
+                      ),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: statusColor.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        statusLabel,
+                        style: TextStyle(
+                          color: statusColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+        ],
+      ),
+    );
+  }
+}
+
+class _DeliveryPartnerAccount {
+  final String name;
+  final String email;
+  final double rating;
+  final int deliveries;
+  final bool isActive;
+  final bool isSuspended;
+
+  const _DeliveryPartnerAccount({
+    required this.name,
+    required this.email,
+    required this.rating,
+    required this.deliveries,
+    required this.isActive,
+    required this.isSuspended,
+  });
+
+  _DeliveryPartnerAccount copyWith({
+    String? name,
+    String? email,
+    double? rating,
+    int? deliveries,
+    bool? isActive,
+    bool? isSuspended,
+  }) {
+    return _DeliveryPartnerAccount(
+      name: name ?? this.name,
+      email: email ?? this.email,
+      rating: rating ?? this.rating,
+      deliveries: deliveries ?? this.deliveries,
+      isActive: isActive ?? this.isActive,
+      isSuspended: isSuspended ?? this.isSuspended,
+    );
+  }
+}
+
+class _AccountSummaryCard extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+
+  const _AccountSummaryCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 250,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: Colors.orange),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      value,
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                        color: valueColor,
+                      ),
+                    ),
+                    Text(
+                      label,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.grey[600],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  final crossAxisCount = width > 1200
-                      ? 3
-                      : width > 760
-                          ? 2
-                          : 2;
-
-                  return GridView.count(
-                    crossAxisCount: crossAxisCount,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    childAspectRatio: width < 430 ? 1.45 : 2.2,
-                    children: const [
-                      _DeliveryStatCard(
-                        icon: Icons.local_shipping_outlined,
-                        value: '6',
-                        label: 'Online Agents',
-                        delta: '↗ 5.2%',
-                      ),
-                      _DeliveryStatCard(
-                        icon: Icons.local_shipping_outlined,
-                        value: '22',
-                        label: 'Active Deliveries',
-                      ),
-                      _DeliveryStatCard(
-                        icon: Icons.star_border,
-                        value: '4.7',
-                        label: 'Avg Rating',
-                        delta: '↗ 1.3%',
-                      ),
-                    ],
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Delivery Agents',
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  final crossAxisCount = width > 1400
-                      ? 4
-                      : width > 1020
-                          ? 3
-                          : width > 680
-                              ? 2
-                              : 2;
-
-                  return GridView.builder(
-                    itemCount: agents.length,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      childAspectRatio: width < 430 ? 0.78 : 0.95,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                    ),
-                    itemBuilder: (context, index) {
-                      final agent = agents[index];
-                      return _DeliveryAgentCard(
-                        name: agent['name'] as String,
-                        rating: agent['rating'] as double,
-                        status: agent['status'] as String,
-                        deliveries: agent['deliveries'] as int,
-                      );
-                    },
-                  );
-                },
-              ),
-              const SizedBox(height: 24),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Live Map',
-                        style: theme.textTheme.headlineSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        height: 300,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: Colors.grey[200],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: const Center(
-                          child: Icon(
-                            Icons.local_shipping_outlined,
-                            size: 48,
-                            color: Colors.grey,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ]),
-          ),
-        ),
-      ],
-    );
-
-    if (isMobile) {
-      return Scaffold(
-        drawer: const Drawer(
-          child: SafeArea(
-            child: AdminSidebar(
-              currentRoute: '/admin/deliveries',
-              compact: true,
-            ),
-          ),
-        ),
-        body: content,
-        bottomNavigationBar: _adminBottomNav(context, '/admin/deliveries'),
-      );
-    }
-
-    return Scaffold(
-      body: Row(
-        children: [
-          const AdminSidebar(currentRoute: '/admin/deliveries'),
-          Expanded(child: content),
-        ],
       ),
-      bottomNavigationBar: _adminBottomNav(context, '/admin/deliveries'),
     );
   }
 }
@@ -431,162 +638,6 @@ Widget _adminBottomNav(BuildContext context, String currentRoute) {
       ),
     ],
   );
-}
-
-class _DeliveryStatCard extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final String? delta;
-
-  const _DeliveryStatCard({
-    required this.icon,
-    required this.value,
-    required this.label,
-    this.delta,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(icon, color: Colors.orange),
-                ),
-                if (delta != null)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      delta!,
-                      style: const TextStyle(
-                        color: Colors.green,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const Spacer(),
-            Text(
-              value,
-              style: theme.textTheme.headlineMedium
-                  ?.copyWith(fontWeight: FontWeight.bold),
-            ),
-            Text(
-              label,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DeliveryAgentCard extends StatelessWidget {
-  final String name;
-  final double rating;
-  final String status;
-  final int deliveries;
-
-  const _DeliveryAgentCard({
-    required this.name,
-    required this.rating,
-    required this.status,
-    required this.deliveries,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isOnline = status == 'Online';
-    final isDelivering = status == 'Delivering';
-
-    final chipColor = isDelivering
-        ? Colors.orange
-        : isOnline
-            ? Colors.green
-            : Colors.grey;
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            CircleAvatar(
-              radius: 34,
-              backgroundColor: Colors.grey[200],
-              child: Text(
-                name.isNotEmpty ? name[0] : '?',
-                style: const TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                const Icon(Icons.star, color: Colors.orange, size: 18),
-                const SizedBox(width: 4),
-                Text('$rating'),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: chipColor.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '• $status',
-                style: TextStyle(
-                  color: chipColor,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              '${deliveries.toString()} deliveries',
-              style: TextStyle(color: Colors.grey[600]),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Coupon Management Screen
