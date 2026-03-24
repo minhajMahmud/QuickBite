@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: quickbite_postgres
+    environment:
+      POSTGRES_USER: quickbite_user
+      POSTGRES_PASSWORD: quickbite_password_2024
+      POSTGRES_DB: quickbite
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database_schema_postgres.sql:/docker-entrypoint-initdb.d/01-schema.sql
+      - ./init-data-postgres.sql:/docker-entrypoint-initdb.d/02-init-data.sql
+    ports:
+      - "5433:5432"
+    networks:
+      - quickbite_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quickbite_user -d quickbite"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # pgAdmin4 - Database Management UI
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: quickbite_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@quickbite.com
+      PGADMIN_DEFAULT_PASSWORD: admin_password_2024
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+      SCRIPT_NAME: /pgadmin
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+      - ./pgadmin_servers.json:/pgadmin4/servers.json
+    ports:
+      - "5050:80"
+    networks:
+      - quickbite_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  quickbite_network:
+    driver: bridge
