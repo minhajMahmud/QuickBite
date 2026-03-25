@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'dart:async';
 import 'dart:ui';
 import 'config/theme/app_theme.dart';
 import 'config/routes/app_routes.dart';
 import 'presentation/providers/app_providers.dart';
+import 'firebase_options.dart';
 
 void main() {
   runZonedGuarded(
-    () {
+    () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
 
       FlutterError.onError = (FlutterErrorDetails details) {
         FlutterError.presentError(details);
