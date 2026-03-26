@@ -55,12 +55,6 @@ dependencies:
   # Payment Processing (placeholder)
   # flutter_stripe: ^8.0.0
   
-  # Notifications
-  firebase_core: ^3.15.2
-  firebase_auth: ^5.7.0
-  firebase_messaging: ^15.2.10
-  firebase_data_connect: ^0.1.4
-  
   # Bottom Navigation
   convex_bottom_bar: ^3.1.0
 

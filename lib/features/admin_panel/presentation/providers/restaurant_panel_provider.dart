@@ -1,7 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
 
-import '../../../../dataconnect_generated/generated.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 
 class RestaurantProfileData {
@@ -163,33 +162,14 @@ class RestaurantPanelState {
 }
 
 class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
-  final ExampleConnector? _connector;
   final String? _preferredRestaurantId;
   final String? _preferredRestaurantName;
-
-  static bool _supportsDataConnect() {
-    if (kIsWeb) {
-      return true;
-    }
-
-    switch (defaultTargetPlatform) {
-      case TargetPlatform.android:
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-      case TargetPlatform.windows:
-        return true;
-      case TargetPlatform.linux:
-      case TargetPlatform.fuchsia:
-        return false;
-    }
-  }
 
   RestaurantPanelNotifier({
     String? preferredRestaurantId,
     String? preferredRestaurantName,
   })  : _preferredRestaurantId = preferredRestaurantId,
         _preferredRestaurantName = preferredRestaurantName,
-        _connector = _supportsDataConnect() ? ExampleConnector.instance : null,
         super(
           const RestaurantPanelState(
             profile: RestaurantProfileData(
@@ -256,110 +236,22 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
           ),
         );
 
-  bool get isBackendAvailable => _connector != null;
+  bool get isBackendAvailable => false;
 
   Future<void> hydrateFromBackend() async {
-    final connector = _connector;
-    if (connector == null) {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
       return;
     }
 
-    try {
-      final restaurantsResult = await connector.listRestaurants().execute();
-      final allRestaurants = restaurantsResult.data.restaurants;
-      if (allRestaurants.isEmpty) {
-        return;
-      }
-
-      final preferredName = _preferredRestaurantName?.trim().toLowerCase();
-      final preferredId = _preferredRestaurantId?.trim();
-
-      final preferredIdMatches = preferredId == null || preferredId.isEmpty
-          ? <ListRestaurantsRestaurants>[]
-          : allRestaurants.where((r) => r.id == preferredId).toList();
-
-      final preferredNameMatches =
-          preferredName == null || preferredName.isEmpty
-              ? <ListRestaurantsRestaurants>[]
-              : allRestaurants.where((r) {
-                  final normalized = r.name.trim().toLowerCase();
-                  return normalized == preferredName ||
-                      normalized.contains(preferredName) ||
-                      preferredName.contains(normalized);
-                }).toList();
-
-      final approved = allRestaurants.where((r) => r.isApproved).toList();
-      final others = allRestaurants.where((r) => !r.isApproved).toList();
-
-      final sortedCandidates = <ListRestaurantsRestaurants>[];
-      final seenIds = <String>{};
-
-      void addUnique(List<ListRestaurantsRestaurants> candidates) {
-        for (final candidate in candidates) {
-          if (seenIds.add(candidate.id)) {
-            sortedCandidates.add(candidate);
-          }
-        }
-      }
-
-      addUnique(preferredIdMatches);
-      addUnique(preferredNameMatches);
-      addUnique(approved);
-      addUnique(others);
-
-      ListRestaurantsRestaurants? selectedRestaurant;
-      List<RestaurantMenuItem> selectedMenuItems = const [];
-
-      for (final candidate in sortedCandidates) {
-        final menuResult = await connector
-            .listFoodItemsByRestaurant(restaurantId: candidate.id)
-            .execute();
-
-        final mapped = menuResult.data.foodItems
-            .map(
-              (item) => RestaurantMenuItem(
-                id: item.id,
-                name: item.name,
-                description: 'Rating ${item.rating.toStringAsFixed(1)}',
-                category: 'Menu',
-                price: item.price,
-                imageUrl: state.profile.imageUrl,
-                popular: item.rating >= 4.5,
-                isAvailable: item.availability == 'available',
-              ),
-            )
-            .toList();
-
-        if (mapped.isNotEmpty) {
-          selectedRestaurant = candidate;
-          selectedMenuItems = mapped;
-          break;
-        }
-      }
-
-      final primaryRestaurant = selectedRestaurant ?? sortedCandidates.first;
-      final backendProfile = RestaurantProfileData(
-        name: primaryRestaurant.name,
-        cuisine: primaryRestaurant.cuisine ?? 'Restaurant',
-        phone: state.profile.phone,
-        email: state.profile.email,
-        address: state.profile.address,
-        hours: primaryRestaurant.status == 'open'
-            ? 'Open now'
-            : 'Currently closed',
-        description:
-            'Live from backend • Rating ${primaryRestaurant.rating.toStringAsFixed(1)} • Delivery fee ${primaryRestaurant.deliveryFee.toStringAsFixed(2)}',
-        imageUrl: state.profile.imageUrl,
-      );
-
-      state = state.copyWith(
-        profile: backendProfile,
-        menuItems: selectedMenuItems,
-        restaurantId: primaryRestaurant.id,
-      );
-    } catch (_) {
-      // Keep dashboard functional with existing local fallback state.
-    }
+    // Remote backend removed: retain existing local/mock dashboard state.
+    state = state.copyWith(
+      restaurantId: _preferredRestaurantId ?? state.restaurantId,
+      profile: state.profile.copyWith(
+        name: _preferredRestaurantName?.isNotEmpty == true
+            ? _preferredRestaurantName!
+            : state.profile.name,
+      ),
+    );
   }
 
   void updateProfile(RestaurantProfileData profile) {
@@ -397,25 +289,6 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {
-    final connector = _connector;
-    if (connector == null) {
-      state = state.copyWith(
-        orders: state.orders
-            .map((order) =>
-                order.id == orderId ? order.copyWith(status: status) : order)
-            .toList(),
-      );
-      return;
-    }
-
-    try {
-      await connector
-          .updateOrderStatus(orderId: orderId, orderStatus: status)
-          .execute();
-    } catch (_) {
-      // Optimistic UI update keeps buttons responsive even if backend rejects.
-    }
-
     state = state.copyWith(
       orders: state.orders
           .map((order) =>
@@ -456,43 +329,23 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
     required bool popular,
     required bool available,
   }) async {
-    final connector = _connector;
-    if (connector == null) {
-      return false;
-    }
+    final itemId = 'food-${DateTime.now().millisecondsSinceEpoch}';
+    final _ = _categoryNameToId(category);
 
-    try {
-      if (state.restaurantId == null || state.restaurantId!.isEmpty) {
-        await hydrateFromBackend();
-      }
+    addMenuItem(
+      RestaurantMenuItem(
+        id: itemId,
+        name: name,
+        description: description,
+        category: category,
+        price: price,
+        imageUrl: imageUrl,
+        popular: popular,
+        isAvailable: available,
+      ),
+    );
 
-      final restaurantId = state.restaurantId;
-      if (restaurantId == null || restaurantId.isEmpty) {
-        return false;
-      }
-
-      final itemId = 'food-${DateTime.now().millisecondsSinceEpoch}';
-      final categoryId = _categoryNameToId(category);
-
-      await connector
-          .createFoodItem(
-            id: itemId,
-            restaurantId: restaurantId,
-            categoryId: categoryId,
-            name: name,
-            description: description,
-            price: price,
-            image: imageUrl,
-            isPopular: popular,
-            availability: available ? 'available' : 'unavailable',
-          )
-          .execute();
-
-      await hydrateFromBackend();
-      return true;
-    } catch (_) {
-      return false;
-    }
+    return true;
   }
 }
 

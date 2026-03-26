@@ -127,3 +127,5 @@ The app should have **role-based login** and dashboards for Customer, Restaurant
 ---
 
 Generate this **as a complete, production-ready UI blueprint** with code snippets, component breakdown, and role-based navigation flow. Include notes for compulsory vs optional fields in forms and admin approval logic.
+
+com.quickbite.mobile

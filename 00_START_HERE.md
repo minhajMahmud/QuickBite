@@ -78,7 +78,7 @@ flutter run
 ### 5️⃣ **ENV_SETUP.md** (Configure APIs)
 
 - API key setup
-- Firebase configuration
+- Backend service configuration
 - Environment variables
 - Security best practices
 
@@ -305,8 +305,7 @@ dependencies:
   fl_chart: 0.65.0 # Charts
   dio: 5.3.0 # HTTP client
   shared_preferences: 2.2.0 # Local storage
-  firebase_core: 2.24.0 # Firebase setup
-  firebase_messaging: 14.6.0 # Notifications
+  backend_sdk: 1.x # Backend initialization
   # ... 60+ more packages
 ```
 
@@ -414,7 +413,7 @@ See the app working!
 ### Long-term (This Month)
 
 1. Integrate real API
-2. Set up Firebase
+2. Set up backend services
 3. Test thoroughly
 4. Deploy to Play Store
 
@@ -472,7 +471,7 @@ A: See ENV_SETUP.md and README.md for API integration guide
 - [Flutter.dev](https://flutter.dev)
 - [Riverpod.dev](https://riverpod.dev)
 - [pub.dev](https://pub.dev) - Package search
-- [Firebase.google.com](https://firebase.google.com)
+- [Cloud backend provider docs]
 
 ---
 

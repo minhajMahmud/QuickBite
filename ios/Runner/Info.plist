@@ -80,10 +80,6 @@
 		<string>fetch</string>
 	</array>
 	
-	<!-- Firebase Configuration -->
-	<key>FirebaseAppDelegateProxyEnabled</key>
-	<boolean>YES</boolean>
-	
 	<!-- Google Maps API Key (update this) -->
 	<key>GoogleMapsAPIKey</key>
 	<string>REPLACE_WITH_YOUR_GOOGLE_MAPS_API_KEY</string>
