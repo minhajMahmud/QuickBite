@@ -1,4 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter/foundation.dart';
+
+import '../../../../dataconnect_generated/generated.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
 
 class RestaurantProfileData {
   final String name;
@@ -132,31 +136,63 @@ class RestaurantPanelState {
   final RestaurantProfileData profile;
   final List<RestaurantMenuItem> menuItems;
   final List<RestaurantPanelOrder> orders;
+  final String? restaurantId;
 
   const RestaurantPanelState({
     required this.profile,
     required this.menuItems,
     required this.orders,
+    this.restaurantId,
   });
 
   RestaurantPanelState copyWith({
     RestaurantProfileData? profile,
     List<RestaurantMenuItem>? menuItems,
     List<RestaurantPanelOrder>? orders,
+    String? restaurantId,
+    bool clearRestaurantId = false,
   }) {
     return RestaurantPanelState(
       profile: profile ?? this.profile,
       menuItems: menuItems ?? this.menuItems,
       orders: orders ?? this.orders,
+      restaurantId:
+          clearRestaurantId ? null : (restaurantId ?? this.restaurantId),
     );
   }
 }
 
 class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
-  RestaurantPanelNotifier()
-      : super(
-          RestaurantPanelState(
-            profile: const RestaurantProfileData(
+  final ExampleConnector? _connector;
+  final String? _preferredRestaurantId;
+  final String? _preferredRestaurantName;
+
+  static bool _supportsDataConnect() {
+    if (kIsWeb) {
+      return true;
+    }
+
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+      case TargetPlatform.iOS:
+      case TargetPlatform.macOS:
+      case TargetPlatform.windows:
+        return true;
+      case TargetPlatform.linux:
+      case TargetPlatform.fuchsia:
+        return false;
+    }
+  }
+
+  RestaurantPanelNotifier({
+    String? preferredRestaurantId,
+    String? preferredRestaurantName,
+  })  : _preferredRestaurantId = preferredRestaurantId,
+        _preferredRestaurantName = preferredRestaurantName,
+        _connector = _supportsDataConnect() ? ExampleConnector.instance : null,
+        super(
+          const RestaurantPanelState(
+            profile: RestaurantProfileData(
               name: 'The Golden Grill',
               cuisine: 'American Cuisine',
               phone: '+1 (555) 100-2000',
@@ -168,62 +204,8 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
               imageUrl:
                   'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=400&h=400&fit=crop',
             ),
-            menuItems: const [
-              RestaurantMenuItem(
-                id: 'm-1',
-                name: 'Classic Burger',
-                description:
-                    'Angus beef, cheddar, lettuce, tomato, special sauce',
-                category: 'Burgers',
-                price: 12.99,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1568901346375-23c9450c58cd?w=800&h=500&fit=crop',
-                popular: true,
-                isAvailable: true,
-              ),
-              RestaurantMenuItem(
-                id: 'm-2',
-                name: 'Truffle Fries',
-                description: 'Hand-cut fries with truffle oil and parmesan',
-                category: 'Sides',
-                price: 8.99,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1576107232684-1279f390859f?w=800&h=500&fit=crop',
-                popular: true,
-                isAvailable: true,
-              ),
-              RestaurantMenuItem(
-                id: 'm-3',
-                name: 'Caesar Salad',
-                description: 'Romaine, croutons, parmesan, caesar dressing',
-                category: 'Salads',
-                price: 10.99,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=800&h=500&fit=crop',
-                isAvailable: true,
-              ),
-              RestaurantMenuItem(
-                id: 'm-4',
-                name: 'Grilled Chicken Wrap',
-                description: 'Chicken breast, avocado, mixed greens, ranch',
-                category: 'Wraps',
-                price: 11.49,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1626700051175-6818013e1d4f?w=800&h=500&fit=crop',
-                isAvailable: true,
-              ),
-              RestaurantMenuItem(
-                id: 'm-5',
-                name: 'Fresh Lemonade',
-                description: 'Fresh squeezed lemons, mint, and cane sugar',
-                category: 'Drinks',
-                price: 4.50,
-                imageUrl:
-                    'https://images.unsplash.com/photo-1523677011781-c91d1bbe2f9e?w=800&h=500&fit=crop',
-                isAvailable: true,
-              ),
-            ],
-            orders: const [
+            menuItems: [],
+            orders: [
               RestaurantPanelOrder(
                 id: 'ro-001',
                 customerName: 'Emma Wilson',
@@ -270,8 +252,115 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
                 status: 'ready',
               ),
             ],
+            restaurantId: null,
           ),
         );
+
+  bool get isBackendAvailable => _connector != null;
+
+  Future<void> hydrateFromBackend() async {
+    final connector = _connector;
+    if (connector == null) {
+      return;
+    }
+
+    try {
+      final restaurantsResult = await connector.listRestaurants().execute();
+      final allRestaurants = restaurantsResult.data.restaurants;
+      if (allRestaurants.isEmpty) {
+        return;
+      }
+
+      final preferredName = _preferredRestaurantName?.trim().toLowerCase();
+      final preferredId = _preferredRestaurantId?.trim();
+
+      final preferredIdMatches = preferredId == null || preferredId.isEmpty
+          ? <ListRestaurantsRestaurants>[]
+          : allRestaurants.where((r) => r.id == preferredId).toList();
+
+      final preferredNameMatches =
+          preferredName == null || preferredName.isEmpty
+              ? <ListRestaurantsRestaurants>[]
+              : allRestaurants.where((r) {
+                  final normalized = r.name.trim().toLowerCase();
+                  return normalized == preferredName ||
+                      normalized.contains(preferredName) ||
+                      preferredName.contains(normalized);
+                }).toList();
+
+      final approved = allRestaurants.where((r) => r.isApproved).toList();
+      final others = allRestaurants.where((r) => !r.isApproved).toList();
+
+      final sortedCandidates = <ListRestaurantsRestaurants>[];
+      final seenIds = <String>{};
+
+      void addUnique(List<ListRestaurantsRestaurants> candidates) {
+        for (final candidate in candidates) {
+          if (seenIds.add(candidate.id)) {
+            sortedCandidates.add(candidate);
+          }
+        }
+      }
+
+      addUnique(preferredIdMatches);
+      addUnique(preferredNameMatches);
+      addUnique(approved);
+      addUnique(others);
+
+      ListRestaurantsRestaurants? selectedRestaurant;
+      List<RestaurantMenuItem> selectedMenuItems = const [];
+
+      for (final candidate in sortedCandidates) {
+        final menuResult = await connector
+            .listFoodItemsByRestaurant(restaurantId: candidate.id)
+            .execute();
+
+        final mapped = menuResult.data.foodItems
+            .map(
+              (item) => RestaurantMenuItem(
+                id: item.id,
+                name: item.name,
+                description: 'Rating ${item.rating.toStringAsFixed(1)}',
+                category: 'Menu',
+                price: item.price,
+                imageUrl: state.profile.imageUrl,
+                popular: item.rating >= 4.5,
+                isAvailable: item.availability == 'available',
+              ),
+            )
+            .toList();
+
+        if (mapped.isNotEmpty) {
+          selectedRestaurant = candidate;
+          selectedMenuItems = mapped;
+          break;
+        }
+      }
+
+      final primaryRestaurant = selectedRestaurant ?? sortedCandidates.first;
+      final backendProfile = RestaurantProfileData(
+        name: primaryRestaurant.name,
+        cuisine: primaryRestaurant.cuisine ?? 'Restaurant',
+        phone: state.profile.phone,
+        email: state.profile.email,
+        address: state.profile.address,
+        hours: primaryRestaurant.status == 'open'
+            ? 'Open now'
+            : 'Currently closed',
+        description:
+            'Live from backend • Rating ${primaryRestaurant.rating.toStringAsFixed(1)} • Delivery fee ${primaryRestaurant.deliveryFee.toStringAsFixed(2)}',
+        imageUrl: state.profile.imageUrl,
+      );
+
+      state = state.copyWith(
+        profile: backendProfile,
+        menuItems: selectedMenuItems,
+        restaurantId: primaryRestaurant.id,
+      );
+    } catch (_) {
+      // Keep dashboard functional with existing local fallback state.
+    }
+  }
 
   void updateProfile(RestaurantProfileData profile) {
     state = state.copyWith(profile: profile);
@@ -307,7 +396,26 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
     );
   }
 
-  void updateOrderStatus(String orderId, String status) {
+  Future<void> updateOrderStatus(String orderId, String status) async {
+    final connector = _connector;
+    if (connector == null) {
+      state = state.copyWith(
+        orders: state.orders
+            .map((order) =>
+                order.id == orderId ? order.copyWith(status: status) : order)
+            .toList(),
+      );
+      return;
+    }
+
+    try {
+      await connector
+          .updateOrderStatus(orderId: orderId, orderStatus: status)
+          .execute();
+    } catch (_) {
+      // Optimistic UI update keeps buttons responsive even if backend rejects.
+    }
+
     state = state.copyWith(
       orders: state.orders
           .map((order) =>
@@ -315,11 +423,86 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
           .toList(),
     );
   }
+
+  String _categoryNameToId(String categoryName) {
+    switch (categoryName.trim().toLowerCase()) {
+      case 'pizza':
+        return 'cat-1';
+      case 'burgers':
+        return 'cat-2';
+      case 'pasta':
+        return 'cat-3';
+      case 'salads':
+        return 'cat-4';
+      case 'desserts':
+        return 'cat-5';
+      case 'drinks':
+      case 'beverages':
+        return 'cat-6';
+      case 'sides':
+      case 'wraps':
+      case 'starters':
+      default:
+        return 'cat-2';
+    }
+  }
+
+  Future<bool> createMenuItemInBackend({
+    required String name,
+    required String description,
+    required String category,
+    required double price,
+    required String imageUrl,
+    required bool popular,
+    required bool available,
+  }) async {
+    final connector = _connector;
+    if (connector == null) {
+      return false;
+    }
+
+    try {
+      if (state.restaurantId == null || state.restaurantId!.isEmpty) {
+        await hydrateFromBackend();
+      }
+
+      final restaurantId = state.restaurantId;
+      if (restaurantId == null || restaurantId.isEmpty) {
+        return false;
+      }
+
+      final itemId = 'food-${DateTime.now().millisecondsSinceEpoch}';
+      final categoryId = _categoryNameToId(category);
+
+      await connector
+          .createFoodItem(
+            id: itemId,
+            restaurantId: restaurantId,
+            categoryId: categoryId,
+            name: name,
+            description: description,
+            price: price,
+            image: imageUrl,
+            isPopular: popular,
+            availability: available ? 'available' : 'unavailable',
+          )
+          .execute();
+
+      await hydrateFromBackend();
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 final restaurantPanelProvider =
     StateNotifierProvider<RestaurantPanelNotifier, RestaurantPanelState>((ref) {
-  return RestaurantPanelNotifier();
+  final authUser = ref.watch(authProvider.select((state) => state.user));
+  return RestaurantPanelNotifier(
+    preferredRestaurantId: authUser?.id,
+    preferredRestaurantName: authUser?.name,
+  );
 });
 
 final restaurantPanelCategoriesProvider = Provider<List<String>>((ref) {
@@ -336,4 +519,9 @@ final restaurantPanelRevenueProvider = Provider<double>((ref) {
   return orders
       .where((order) => order.status != 'rejected')
       .fold<double>(0, (sum, order) => sum + order.total);
+});
+
+final restaurantPanelSyncProvider = FutureProvider<void>((ref) async {
+  ref.watch(authProvider.select((state) => state.user?.id));
+  await ref.read(restaurantPanelProvider.notifier).hydrateFromBackend();
 });

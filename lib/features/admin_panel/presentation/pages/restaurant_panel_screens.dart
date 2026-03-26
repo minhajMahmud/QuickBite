@@ -16,6 +16,7 @@ class RestaurantOverviewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final backendSync = ref.watch(restaurantPanelSyncProvider);
     final state = ref.watch(restaurantPanelProvider);
     final orders = state.orders;
     final revenue = ref.watch(restaurantPanelRevenueProvider);
@@ -32,6 +33,25 @@ class RestaurantOverviewScreen extends ConsumerWidget {
       subtitle: state.profile.name,
       child: Column(
         children: [
+          if (backendSync.isLoading) ...[
+            const LinearProgressIndicator(minHeight: 3),
+            const SizedBox(height: 12),
+          ],
+          if (backendSync.hasError) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF4E5),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Text(
+                'Backend sync unavailable right now. Showing fallback panel data.',
+                style: TextStyle(fontSize: 12, color: Color(0xFF8A4B00)),
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           _StatsGrid(
             mobileCrossAxisCount: 2,
             cards: [
@@ -132,6 +152,7 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final backendSync = ref.watch(restaurantPanelSyncProvider);
     final state = ref.watch(restaurantPanelProvider);
     final categories = ref.watch(restaurantPanelCategoriesProvider);
 
@@ -163,6 +184,10 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (backendSync.isLoading) ...[
+            const LinearProgressIndicator(minHeight: 3),
+            const SizedBox(height: 12),
+          ],
           TextField(
             onChanged: (value) => setState(() => _search = value),
             decoration: const InputDecoration(
@@ -239,6 +264,7 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
 
   Future<void> _showMenuItemDialog(BuildContext context,
       {RestaurantMenuItem? existingItem}) async {
+    final parentContext = context;
     final nameController =
         TextEditingController(text: existingItem?.name ?? '');
     final descriptionController =
@@ -255,9 +281,9 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
     final formKey = GlobalKey<FormState>();
 
     final result = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setModalState) {
+      context: parentContext,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (dialogContext, setModalState) {
           return AlertDialog(
             title:
                 Text(existingItem == null ? 'Add Menu Item' : 'Edit Menu Item'),
@@ -356,29 +382,43 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
+                onPressed: () => Navigator.pop(dialogContext, false),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () {
+                onPressed: () async {
                   if (formKey.currentState?.validate() ?? false) {
                     final parsedPrice =
                         double.parse(priceController.text.trim());
                     final notifier = ref.read(restaurantPanelProvider.notifier);
 
                     if (existingItem == null) {
-                      notifier.addMenuItem(
-                        RestaurantMenuItem(
-                          id: 'm-${DateTime.now().microsecondsSinceEpoch}',
-                          name: nameController.text.trim(),
-                          description: descriptionController.text.trim(),
-                          category: category,
-                          price: parsedPrice,
-                          imageUrl: imageController.text.trim(),
-                          popular: popular,
-                          isAvailable: available,
-                        ),
+                      final created = await notifier.createMenuItemInBackend(
+                        name: nameController.text.trim(),
+                        description: descriptionController.text.trim(),
+                        category: category,
+                        price: parsedPrice,
+                        imageUrl: imageController.text.trim(),
+                        popular: popular,
+                        available: available,
                       );
+
+                      if (!created) {
+                        if (!parentContext.mounted) {
+                          return;
+                        }
+
+                        final message = notifier.isBackendAvailable
+                            ? 'Could not save item to backend. Please try again.'
+                            : 'Backend save is unavailable on this platform. Use Android, iOS, Web, or macOS for live DB writes.';
+
+                        ScaffoldMessenger.of(parentContext).showSnackBar(
+                          SnackBar(
+                            content: Text(message),
+                          ),
+                        );
+                        return;
+                      }
                     } else {
                       notifier.updateMenuItem(
                         existingItem.copyWith(
@@ -393,7 +433,10 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
                       );
                     }
 
-                    Navigator.pop(context, true);
+                    if (!dialogContext.mounted) {
+                      return;
+                    }
+                    Navigator.pop(dialogContext, true);
                   }
                 },
                 child: const Text('Save'),
@@ -404,8 +447,11 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
       ),
     );
 
-    if (result == true && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    if (result == true) {
+      if (!parentContext.mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(parentContext).showSnackBar(
         SnackBar(
           content: Text(
               existingItem == null ? 'Menu item added' : 'Menu item updated'),
@@ -429,6 +475,7 @@ class _RestaurantOrdersScreenState
 
   @override
   Widget build(BuildContext context) {
+    final backendSync = ref.watch(restaurantPanelSyncProvider);
     final orders =
         ref.watch(restaurantPanelProvider.select((state) => state.orders));
     final filteredOrders = orders.where((order) {
@@ -443,6 +490,10 @@ class _RestaurantOrdersScreenState
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (backendSync.isLoading) ...[
+            const LinearProgressIndicator(minHeight: 3),
+            const SizedBox(height: 12),
+          ],
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
