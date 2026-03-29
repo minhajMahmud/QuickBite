@@ -52,14 +52,33 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final horizontalPadding = screenWidth < 360 ? 12.0 : 16.0;
-    final restaurants = ref.watch(restaurantsProvider);
-    final featuredRestaurants = ref.watch(featuredRestaurantsProvider);
-    final categories = ref.watch(categoriesProvider);
+    final restaurantsAsync = ref.watch(restaurantsProvider);
+    final featuredRestaurantsAsync = ref.watch(featuredRestaurantsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
+
+    final restaurants = restaurantsAsync.asData?.value ?? <Restaurant>[];
+    final featuredRestaurants =
+        featuredRestaurantsAsync.asData?.value ?? <Restaurant>[];
+    final categories = categoriesAsync.asData?.value ?? <Category>[];
+
+    final isLoadingInitial =
+        (restaurantsAsync.isLoading || categoriesAsync.isLoading) &&
+            restaurants.isEmpty &&
+            categories.isEmpty;
     final authState = ref.watch(authProvider);
     final isGuest = !authState.isAuthenticated;
     final popular =
         featuredRestaurants.isNotEmpty ? featuredRestaurants : restaurants;
     final discounted = restaurants.reversed.toList();
+
+    if (isLoadingInitial) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFF5F5F7),
+        body: const SafeArea(
+          child: Center(child: CircularProgressIndicator()),
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F5F7),

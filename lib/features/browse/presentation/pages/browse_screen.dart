@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../presentation/providers/app_providers.dart';
+import '../../../../data/models/models.dart';
 import '../../../../presentation/widgets/restaurant_card.dart';
 import '../../../../presentation/widgets/category_chip.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
@@ -33,12 +34,19 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final categories = ref.watch(categoriesProvider);
-    final filteredRestaurants = ref.watch(filteredRestaurantsProvider);
+    final categoriesAsync = ref.watch(categoriesProvider);
+    final filteredRestaurantsAsync = ref.watch(filteredRestaurantsProvider);
+    final categories = categoriesAsync.asData?.value ?? <Category>[];
+    final filteredRestaurants =
+        filteredRestaurantsAsync.asData?.value ?? <Restaurant>[];
     final selectedCategory = ref.watch(categoryFilterProvider);
     final filters = ref.watch(browseFiltersProvider);
     final authState = ref.watch(authProvider);
     final isGuest = !authState.isAuthenticated;
+    final isLoadingInitial =
+        (categoriesAsync.isLoading || filteredRestaurantsAsync.isLoading) &&
+            categories.isEmpty &&
+            filteredRestaurants.isEmpty;
 
     return Scaffold(
       backgroundColor: AppColors.lightBackground,
@@ -245,38 +253,45 @@ class _BrowseScreenState extends ConsumerState<BrowseScreen> {
               horizontal: 16.0,
               vertical: 8.0,
             ),
-            sliver: filteredRestaurants.isEmpty
-                ? SliverToBoxAdapter(
-                    child: Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32.0),
-                        child: Column(
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: AppColors.muted.withOpacity(0.3),
-                            ),
-                            const SizedBox(height: 16),
-                            const Text('No restaurants found'),
-                          ],
-                        ),
-                      ),
+            sliver: isLoadingInitial
+                ? const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: CircularProgressIndicator()),
                     ),
                   )
-                : SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 12.0),
-                        child: RestaurantCard(
-                          restaurant: filteredRestaurants[index],
-                          onTap: () => context.push(
-                            '/restaurant/${filteredRestaurants[index].id}',
+                : filteredRestaurants.isEmpty
+                    ? SliverToBoxAdapter(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32.0),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.search_off,
+                                  size: 64,
+                                  color: AppColors.muted.withOpacity(0.3),
+                                ),
+                                const SizedBox(height: 16),
+                                const Text('No restaurants found'),
+                              ],
+                            ),
                           ),
                         ),
-                      );
-                    }, childCount: filteredRestaurants.length),
-                  ),
+                      )
+                    : SliverList(
+                        delegate: SliverChildBuilderDelegate((context, index) {
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12.0),
+                            child: RestaurantCard(
+                              restaurant: filteredRestaurants[index],
+                              onTap: () => context.push(
+                                '/restaurant/${filteredRestaurants[index].id}',
+                              ),
+                            ),
+                          );
+                        }, childCount: filteredRestaurants.length),
+                      ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: 32)),
         ],

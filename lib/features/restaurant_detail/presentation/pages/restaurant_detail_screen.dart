@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../presentation/providers/app_providers.dart';
+import '../../../../data/models/models.dart';
 import '../../../../presentation/widgets/food_item_card.dart';
 import '../../../../presentation/widgets/adaptive_app_image.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
@@ -34,9 +35,18 @@ class RestaurantDetailScreen extends ConsumerWidget {
       );
     }
 
-    final restaurant = ref.watch(restaurantDetailProvider(restaurantId));
-    final menuItems = ref.watch(restaurantMenuProvider(restaurantId));
+    final restaurantAsync = ref.watch(restaurantDetailProvider(restaurantId));
+    final menuItemsAsync = ref.watch(restaurantMenuProvider(restaurantId));
+    final restaurant = restaurantAsync.asData?.value;
+    final menuItems = menuItemsAsync.asData?.value ?? <FoodItem>[];
     final isGuest = !ref.watch(authProvider).isAuthenticated;
+
+    if (restaurantAsync.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Restaurant')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
 
     if (restaurant == null) {
       return Scaffold(

@@ -1,7 +1,8 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/material.dart';
+import 'package:dio/dio.dart';
 import '../../data/models/models.dart';
-import '../../data/datasources/mock_data_service.dart';
+import '../../data/datasources/catalog_api_service.dart';
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   ThemeModeNotifier() : super(ThemeMode.light);
@@ -20,26 +21,41 @@ final themeModeProvider = StateNotifierProvider<ThemeModeNotifier, ThemeMode>(
 );
 
 /// Restaurants Provider - loads all restaurants
-final restaurantsProvider = Provider<List<Restaurant>>((ref) {
-  return MockDataService.restaurants;
+final catalogApiServiceProvider = Provider<CatalogApiService>((ref) {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+    ),
+  );
+
+  const baseUrl = 'http://localhost:3000';
+  return CatalogApiService(dio: dio, baseUrl: baseUrl);
+});
+
+final restaurantsProvider = FutureProvider<List<Restaurant>>((ref) async {
+  final service = ref.watch(catalogApiServiceProvider);
+  return service.fetchRestaurants();
 });
 
 /// Food Items Provider - loads all food items
-final foodItemsProvider = Provider<List<FoodItem>>((ref) {
-  return MockDataService.foodItems;
+final foodItemsProvider = FutureProvider<List<FoodItem>>((ref) async {
+  final service = ref.watch(catalogApiServiceProvider);
+  return service.fetchFoodItems();
 });
 
 /// Categories Provider - loads all categories
-final categoriesProvider = Provider<List<Category>>((ref) {
-  return MockDataService.categories;
+final categoriesProvider = FutureProvider<List<Category>>((ref) async {
+  final service = ref.watch(catalogApiServiceProvider);
+  return service.fetchCategories();
 });
 
 /// Restaurant Detail Provider - gets a single restaurant by ID
-final restaurantDetailProvider = Provider.family<Restaurant?, String>((
+final restaurantDetailProvider = FutureProvider.family<Restaurant?, String>((
   ref,
   id,
-) {
-  final restaurants = ref.watch(restaurantsProvider);
+) async {
+  final restaurants = await ref.watch(restaurantsProvider.future);
   for (final restaurant in restaurants) {
     if (restaurant.id == id) return restaurant;
   }
@@ -47,12 +63,12 @@ final restaurantDetailProvider = Provider.family<Restaurant?, String>((
 });
 
 /// Restaurant Menu Items Provider - gets food items for a specific restaurant
-final restaurantMenuProvider = Provider.family<List<FoodItem>, String>((
+final restaurantMenuProvider = FutureProvider.family<List<FoodItem>, String>((
   ref,
   restaurantId,
-) {
-  final items = ref.watch(foodItemsProvider);
-  return items.where((item) => item.restaurantId == restaurantId).toList();
+) async {
+  final service = ref.watch(catalogApiServiceProvider);
+  return service.fetchRestaurantMenu(restaurantId);
 });
 
 /// Cart State Notifier - manages shopping cart
@@ -298,9 +314,10 @@ final browseFiltersProvider =
 });
 
 /// Filtered Restaurants
-final filteredRestaurantsProvider = Provider<List<Restaurant>>((ref) {
-  final restaurants = ref.watch(restaurantsProvider);
-  final foodItems = ref.watch(foodItemsProvider);
+final filteredRestaurantsProvider =
+    FutureProvider<List<Restaurant>>((ref) async {
+  final restaurants = await ref.watch(restaurantsProvider.future);
+  final foodItems = await ref.watch(foodItemsProvider.future);
   final searchQuery = ref.watch(searchQueryProvider);
   final categoryFilter = ref.watch(categoryFilterProvider);
   final filters = ref.watch(browseFiltersProvider);
@@ -360,8 +377,9 @@ int? _extractEtaMinutes(String rawDeliveryTime) {
 }
 
 /// Featured/Popular Restaurants
-final featuredRestaurantsProvider = Provider<List<Restaurant>>((ref) {
-  final restaurants = ref.watch(restaurantsProvider);
+final featuredRestaurantsProvider =
+    FutureProvider<List<Restaurant>>((ref) async {
+  final restaurants = await ref.watch(restaurantsProvider.future);
   return restaurants.where((r) => r.popular).toList();
 });
 
