@@ -45,13 +45,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (authState.isAuthenticated && mounted) {
         final role = authState.user?.role ?? UserRole.customer;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Logged in successfully!')),
+          SnackBar(
+            content:
+                Text(authState.successMessage ?? 'Logged in successfully!'),
+            backgroundColor: Colors.green,
+          ),
         );
         // Navigate to appropriate dashboard based on role
         context.go(_routeForRole(role));
       } else if (authState.error != null && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(authState.error ?? 'Login failed')),
+          SnackBar(
+            content: Text(authState.error ?? 'Login failed'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

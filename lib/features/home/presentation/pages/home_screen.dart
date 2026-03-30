@@ -6,6 +6,7 @@ import '../../../../data/models/models.dart';
 import '../../../../config/theme/app_theme.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
+import '../widgets/offers_section.dart';
 
 const _feedShortcuts = [
   _FeedShortcut(
@@ -385,6 +386,18 @@ class HomeScreen extends ConsumerWidget {
                       ),
                     ),
                     const SizedBox(height: 14),
+                    _SectionHeader(
+                      title: 'Active Offers',
+                      onTap: () => context.push('/browse'),
+                    ),
+                    const SizedBox(height: 10),
+                    const OffersSection(),
+                    const SizedBox(height: 18),
+                    _SectionHeader(
+                      title: 'Special Deals',
+                      onTap: () => context.push('/browse'),
+                    ),
+                    const SizedBox(height: 10),
                     SizedBox(
                       height: 186,
                       child: ListView.separated(

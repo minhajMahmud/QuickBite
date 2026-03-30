@@ -71,18 +71,49 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         gender: _selectedRole == UserRole.customer ? _selectedGender : null,
       );
 
-      ref.read(authProvider.notifier).signup(request);
-
-      // Wait a moment for state to update
-      await Future.delayed(const Duration(milliseconds: 500));
+      await ref.read(authProvider.notifier).signup(request);
 
       final authState = ref.read(authProvider);
-      if (authState.isAuthenticated && mounted) {
+
+      if (!mounted) return;
+
+      // Check for errors first
+      if (authState.error != null && authState.error!.isNotEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Account created successfully!')),
+          SnackBar(
+            content: Text(authState.error!),
+            backgroundColor: Colors.red,
+          ),
         );
-        // Navigate to appropriate dashboard based on role
-        Navigator.of(context).pushReplacementNamed('/dashboard');
+        return;
+      }
+
+      // Show success message (backend + DB backed)
+      if (authState.successMessage != null &&
+          authState.successMessage!.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(authState.successMessage!),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+
+      // Navigate based on authentication state
+      if (authState.isAuthenticated) {
+        context.go('/dashboard');
+      } else if (authState.user != null) {
+        // User created in DB but email verification required
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Account created and saved to database. Please verify your email, then sign in.',
+            ),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        context.go('/login');
       }
     }
   }

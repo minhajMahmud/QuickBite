@@ -12,4 +12,18 @@ module.exports = {
     password: process.env.DB_PASSWORD || 'quickbite_password_2024',
     database: process.env.DB_NAME || 'quickbite',
   },
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || '',
+    fromEmail: process.env.RESEND_FROM_EMAIL || 'noreply@quickbite.com',
+    fromName: process.env.RESEND_FROM_NAME || 'QuickBite',
+  },
+  frontend: {
+    url: process.env.FRONTEND_URL || 'http://localhost:3001',
+    emailVerificationUrl: process.env.EMAIL_VERIFICATION_URL || 'http://localhost:3001/verify-email',
+    resetPasswordUrl: process.env.RESET_PASSWORD_URL || 'http://localhost:3001/reset-password',
+  },
+  tokenExpiry: {
+    emailVerification: '24h',
+    passwordReset: '1h',
+  },
 };

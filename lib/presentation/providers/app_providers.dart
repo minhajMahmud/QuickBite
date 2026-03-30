@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import '../../data/models/models.dart';
 import '../../data/datasources/catalog_api_service.dart';
+import '../../data/datasources/offers_api_service.dart';
+import '../../data/datasources/dashboard_api_service.dart' as dashboard;
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   ThemeModeNotifier() : super(ThemeMode.light);
@@ -31,6 +33,32 @@ final catalogApiServiceProvider = Provider<CatalogApiService>((ref) {
 
   const baseUrl = 'http://localhost:3000';
   return CatalogApiService(dio: dio, baseUrl: baseUrl);
+});
+
+/// Offers API Service Provider
+final offersApiServiceProvider = Provider<OffersApiService>((ref) {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+    ),
+  );
+
+  const baseUrl = 'http://localhost:3000';
+  return OffersApiService(dio: dio, baseUrl: baseUrl);
+});
+
+/// Offers Provider - loads all active offers
+final offersProvider = FutureProvider<List<Offer>>((ref) async {
+  final service = ref.watch(offersApiServiceProvider);
+  return service.fetchAllOffers();
+});
+
+/// Single Offer Provider
+final offerDetailProvider =
+    FutureProvider.family<Offer?, String>((ref, id) async {
+  final service = ref.watch(offersApiServiceProvider);
+  return service.fetchOfferById(id);
 });
 
 final restaurantsProvider = FutureProvider<List<Restaurant>>((ref) async {
@@ -69,6 +97,34 @@ final restaurantMenuProvider = FutureProvider.family<List<FoodItem>, String>((
 ) async {
   final service = ref.watch(catalogApiServiceProvider);
   return service.fetchRestaurantMenu(restaurantId);
+});
+
+// ============== DASHBOARD PROVIDERS ==============
+
+/// Dashboard API Service Provider
+final dashboardApiServiceProvider =
+    Provider<dashboard.DashboardApiService>((ref) {
+  final dio = Dio(
+    BaseOptions(
+      connectTimeout: const Duration(seconds: 15),
+      receiveTimeout: const Duration(seconds: 20),
+    ),
+  );
+
+  const baseUrl = 'http://localhost:3000';
+  return dashboard.DashboardApiService(dio: dio, baseUrl: baseUrl);
+});
+
+/// User Stats Provider - Real-time user dashboard statistics
+final userStatsProvider = FutureProvider<dashboard.UserStats>((ref) async {
+  final service = ref.watch(dashboardApiServiceProvider);
+  return service.getUserStats();
+});
+
+/// Recent Orders Provider - Get user's recent orders
+final recentOrdersProvider = FutureProvider<List<dashboard.Order>>((ref) async {
+  final service = ref.watch(dashboardApiServiceProvider);
+  return service.getRecentOrders();
 });
 
 /// Cart State Notifier - manages shopping cart

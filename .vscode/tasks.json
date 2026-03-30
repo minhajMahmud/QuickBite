@@ -1,0 +1,57 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "backend: run with database",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": [
+				"up",
+				"-d",
+				"postgres",
+				"pgadmin",
+				"backend"
+			],
+			"problemMatcher": [],
+			"group": "build"
+		},
+		{
+			"label": "backend: stop services",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["down"],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"focus": false,
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "database: verify users data",
+			"type": "shell",
+			"command": "docker",
+			"args": ["exec", "quickbite_postgres", "psql", "-U", "quickbite_user", "-d", "quickbite", "-c", "SELECT id, name, email, created_at FROM public.users ORDER BY created_at DESC;"],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "shared"
+			}
+		},
+		{
+			"label": "backend: view logs",
+			"type": "shell",
+			"command": "docker-compose",
+			"args": ["logs", "-f", "backend"],
+			"isBackground": true,
+			"problemMatcher": [],
+			"group": "build",
+			"presentation": {
+				"reveal": "always",
+				"focus": true,
+				"panel": "new"
+			}
+		}
+	]
+}

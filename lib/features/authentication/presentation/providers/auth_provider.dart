@@ -4,6 +4,7 @@ import 'package:crypto/crypto.dart';
 import 'dart:convert';
 import '../../data/models/auth_model.dart';
 import '../../data/models/user_role.dart';
+import '../../data/services/api_client.dart';
 
 final ValueNotifier<AuthState> authRouterStateNotifier =
     ValueNotifier<AuthState>(const AuthState());
@@ -74,43 +75,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> signup(SignupRequest request) async {
     _setState(state.copyWith(isLoading: true, error: null));
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      final apiClient = ApiClient();
+      final response = await apiClient.signup(request);
 
-      // TODO: Replace with actual API call
-      // Example: final response = await authRepository.signup(request);
-
-      // Mock successful response
-      final normalizedEmail = request.email.trim().toLowerCase();
-      final passwordHash = _hashPassword(request.password.trim());
-      final mockUser = AuthUser(
-        id: 'user_${DateTime.now().millisecondsSinceEpoch}',
-        name: request.fullName,
-        email: normalizedEmail,
-        phone: request.phone,
-        role: request.role,
-        avatar: request.profilePicture,
-        emailVerified: false,
-        dateOfBirth: request.dateOfBirth,
-        gender: request.gender,
-        passwordHash: passwordHash,
-      );
-
-      _registeredAccounts[normalizedEmail] = _RegisteredAccount(
-        user: mockUser,
-        passwordHash: passwordHash,
-      );
+      // Parse the response
+      final authResponse = AuthResponse.fromJson(response);
 
       _setState(state.copyWith(
-        isAuthenticated: true,
+        isAuthenticated: false, // Email needs verification
         isLoading: false,
-        user: mockUser,
-        successMessage: 'Account created successfully!',
+        user: authResponse.user,
+        successMessage: (response['message']?.toString().isNotEmpty ?? false)
+            ? '${response['message']} (saved to PostgreSQL)'
+            : 'Account created successfully and saved to PostgreSQL. Please verify your email.',
       ));
     } catch (e) {
+      print('Signup error: $e');
       _setState(state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        error: e.toString().replaceAll('Exception: ', ''),
       ));
     }
   }
@@ -119,36 +102,25 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> login(LoginRequest request) async {
     _setState(state.copyWith(isLoading: true, error: null));
     try {
-      // Simulate API call
-      await Future.delayed(const Duration(seconds: 2));
+      final apiClient = ApiClient();
+      final response = await apiClient.login(request);
 
-      // TODO: Replace with actual API call
-      // Example: final response = await authRepository.login(request);
-
-      final normalizedEmail = request.email.trim().toLowerCase();
-      final normalizedPasswordHash = _hashPassword(request.password.trim());
-      final account = _registeredAccounts[normalizedEmail];
-
-      if (account == null || account.passwordHash != normalizedPasswordHash) {
-        _setState(state.copyWith(
-          isLoading: false,
-          isAuthenticated: false,
-          user: null,
-          error: 'Invalid email or password',
-        ));
-        return;
-      }
+      // Parse the response
+      final authResponse = AuthResponse.fromJson(response);
 
       _setState(state.copyWith(
         isAuthenticated: true,
         isLoading: false,
-        user: account.user,
-        successMessage: 'Logged in successfully!',
+        user: authResponse.user,
+        successMessage: 'Logged in successfully (backend verified).',
       ));
     } catch (e) {
+      print('Login error: $e');
       _setState(state.copyWith(
         isLoading: false,
-        error: e.toString(),
+        isAuthenticated: false,
+        user: null,
+        error: e.toString().replaceAll('Exception: ', ''),
       ));
     }
   }
