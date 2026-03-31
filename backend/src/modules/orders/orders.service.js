@@ -2,9 +2,13 @@ const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const ordersStore = require('./orders.store');
 
-function createOrder({ userId, restaurantId, items, totalAmount }) {
+async function createOrder({ userId, restaurantId, items, totalAmount }) {
   if (!Array.isArray(items) || items.length === 0) {
     throw new ApiError(400, 'Order items are required');
+  }
+
+  if (!restaurantId) {
+    throw new ApiError(400, 'Restaurant is required');
   }
 
   const order = {
@@ -20,7 +24,7 @@ function createOrder({ userId, restaurantId, items, totalAmount }) {
   return ordersStore.createOrder(order);
 }
 
-function listOrdersForRole(user) {
+async function listOrdersForRole(user) {
   if (user.role === 'admin') {
     return ordersStore.listOrders();
   }
@@ -28,8 +32,8 @@ function listOrdersForRole(user) {
   return ordersStore.listOrdersByUser(user.sub);
 }
 
-function updateOrderStatus(orderId, status, user) {
-  const order = ordersStore.findOrderById(orderId);
+async function updateOrderStatus(orderId, status, user) {
+  const order = await ordersStore.findOrderById(orderId);
   if (!order) {
     throw new ApiError(404, 'Order not found');
   }
@@ -38,8 +42,19 @@ function updateOrderStatus(orderId, status, user) {
     throw new ApiError(403, 'Only admin or restaurant can update order status');
   }
 
-  order.status = status;
-  return order;
+  if (user.role === 'restaurant') {
+    const canManage = await ordersStore.canRestaurantManageOrder(orderId, user.sub);
+    if (!canManage) {
+      throw new ApiError(403, 'Forbidden: cannot modify orders for other restaurants');
+    }
+  }
+
+  const updated = await ordersStore.updateOrderStatus(orderId, status);
+  if (!updated) {
+    throw new ApiError(404, 'Order not found');
+  }
+
+  return updated;
 }
 
 module.exports = {

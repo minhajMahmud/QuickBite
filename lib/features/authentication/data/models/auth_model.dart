@@ -109,6 +109,7 @@ class AuthUser extends Equatable {
   final UserRole role;
   final String avatar;
   final bool emailVerified;
+  final bool approved;
   final DateTime? dateOfBirth;
   final String? gender;
   final String? passwordHash;
@@ -121,6 +122,7 @@ class AuthUser extends Equatable {
     required this.role,
     this.avatar = '',
     this.emailVerified = false,
+    this.approved = true,
     this.dateOfBirth,
     this.gender,
     this.passwordHash,
@@ -134,6 +136,7 @@ class AuthUser extends Equatable {
     UserRole? role,
     String? avatar,
     bool? emailVerified,
+    bool? approved,
     DateTime? dateOfBirth,
     String? gender,
     String? passwordHash,
@@ -149,6 +152,7 @@ class AuthUser extends Equatable {
       role: role ?? this.role,
       avatar: avatar ?? this.avatar,
       emailVerified: emailVerified ?? this.emailVerified,
+      approved: approved ?? this.approved,
       dateOfBirth: clearDateOfBirth ? null : (dateOfBirth ?? this.dateOfBirth),
       gender: clearGender ? null : (gender ?? this.gender),
       passwordHash:
@@ -165,6 +169,7 @@ class AuthUser extends Equatable {
         role,
         avatar,
         emailVerified,
+        approved,
         dateOfBirth,
         gender,
         passwordHash,
@@ -179,6 +184,7 @@ class AuthUser extends Equatable {
       role: UserRole.fromString(json['role'] ?? 'guest'),
       avatar: json['avatar'] ?? '',
       emailVerified: json['emailVerified'] ?? false,
+      approved: json['approved'] ?? true,
       dateOfBirth: json['dateOfBirth'] != null
           ? DateTime.tryParse(json['dateOfBirth'])
           : null,
@@ -195,6 +201,7 @@ class AuthUser extends Equatable {
         'role': role.value,
         'avatar': avatar,
         'emailVerified': emailVerified,
+        'approved': approved,
         'dateOfBirth': dateOfBirth?.toIso8601String(),
         'gender': gender,
         'passwordHash': passwordHash,
@@ -206,6 +213,7 @@ class AuthState extends Equatable {
   final bool isAuthenticated;
   final bool isLoading;
   final AuthUser? user;
+  final String? token;
   final String? error;
   final String? successMessage;
 
@@ -213,6 +221,7 @@ class AuthState extends Equatable {
     this.isAuthenticated = false,
     this.isLoading = false,
     this.user,
+    this.token,
     this.error,
     this.successMessage,
   });
@@ -221,6 +230,7 @@ class AuthState extends Equatable {
     bool? isAuthenticated,
     bool? isLoading,
     AuthUser? user,
+    String? token,
     String? error,
     String? successMessage,
   }) {
@@ -228,6 +238,7 @@ class AuthState extends Equatable {
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
       isLoading: isLoading ?? this.isLoading,
       user: user ?? this.user,
+      token: token ?? this.token,
       error: error,
       successMessage: successMessage,
     );
@@ -235,5 +246,5 @@ class AuthState extends Equatable {
 
   @override
   List<Object?> get props =>
-      [isAuthenticated, isLoading, user, error, successMessage];
+      [isAuthenticated, isLoading, user, token, error, successMessage];
 }

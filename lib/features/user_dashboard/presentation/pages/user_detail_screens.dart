@@ -4,13 +4,73 @@ import 'package:go_router/go_router.dart';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/status_badge.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
-import '../../../../data/datasources/mock_data_service.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
+import '../../../authentication/data/services/api_client.dart';
 import '../widgets/user_dashboard_sidebar.dart';
 import '../dialogs/add_address_dialog.dart';
 
 /// User Order History Screen
-class UserOrderHistoryScreen extends ConsumerWidget {
+class UserOrderHistoryScreen extends ConsumerStatefulWidget {
   const UserOrderHistoryScreen({Key? key}) : super(key: key);
+
+  @override
+  ConsumerState<UserOrderHistoryScreen> createState() =>
+      _UserOrderHistoryScreenState();
+}
+
+class _UserOrderHistoryScreenState
+    extends ConsumerState<UserOrderHistoryScreen> {
+  List<Map<String, dynamic>> _orders = [];
+  bool _isLoading = false;
+
+  Future<void> _loadOrders() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final rows = await ApiClient().getMyOrders(token: token);
+      if (!mounted) return;
+      setState(() {
+        _orders = rows;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  String _formatOrderDate(String? isoDate) {
+    final parsed = DateTime.tryParse(isoDate ?? '');
+    if (parsed == null) return 'Unknown date';
+    final local = parsed.toLocal();
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${local.year}-${two(local.month)}-${two(local.day)} ${two(local.hour)}:${two(local.minute)}';
+  }
+
+  List<String> _itemsFromOrder(Map<String, dynamic> order) {
+    final raw = order['items'];
+    if (raw is! List) return const [];
+    return raw.map((item) {
+      if (item is Map) {
+        final name = item['name']?.toString();
+        if (name != null && name.isNotEmpty) return name;
+      }
+      return item.toString();
+    }).toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadOrders();
+    });
+  }
 
   Future<void> _showRatingDialog(BuildContext context, String restaurant) {
     double rating = 4;
@@ -74,9 +134,9 @@ class UserOrderHistoryScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final orders = MockDataService.generateMockOrders();
+    final orders = _orders;
     final ongoingOrders = ref.watch(ongoingOrdersProvider);
     final isCompact = MediaQuery.of(context).size.width < 900;
 
@@ -112,151 +172,170 @@ class UserOrderHistoryScreen extends ConsumerWidget {
             if (!isCompact)
               const UserDashboardSidebar(currentRoute: '/dashboard/orders'),
             Expanded(
-              child: ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  if (ongoingOrders.isNotEmpty) ...[
-                    Text(
-                      'Ongoing Orders',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                    ...ongoingOrders.map(
-                      (ongoing) => Card(
-                        color: const Color(0xFFFFF7ED),
-                        margin: const EdgeInsets.only(bottom: 12),
-                        child: ListTile(
-                          title: Text(
-                            '#${ongoing.id.substring(ongoing.id.length - 6)} • ${ongoing.restaurantName}',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView(
+                      padding: const EdgeInsets.all(16),
+                      children: [
+                        if (ongoingOrders.isNotEmpty) ...[
+                          Text(
+                            'Ongoing Orders',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
-                          subtitle: Text(
-                            '${ongoing.items.join(', ')}\nETA: ${ongoing.etaMinutes} min',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          trailing: ElevatedButton(
-                            onPressed: () => context.go(
-                              '/order-tracking?orderId=${ongoing.id}',
-                            ),
-                            child: const Text('Track'),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Past Orders',
-                      style: theme.textTheme.titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                  ...orders.map((order) {
-                    return Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final narrow = constraints.maxWidth < 360;
-                                final idText = Text(
-                                  '#${order.id.substring(0, 6)}',
-                                  style: theme.textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                );
-                                final badge = StatusBadge(status: order.status);
-
-                                if (narrow) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      idText,
-                                      const SizedBox(height: 6),
-                                      badge,
-                                    ],
-                                  );
-                                }
-
-                                return Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [idText, badge],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              order.restaurant,
-                              style: theme.textTheme.bodyMedium,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              order.items.join(', '),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: theme.textTheme.bodySmall
-                                  ?.copyWith(color: theme.hintColor),
-                            ),
-                            const SizedBox(height: 12),
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                final narrow = constraints.maxWidth < 320;
-                                final date = Text(
-                                  order.date,
-                                  style: theme.textTheme.bodySmall,
-                                );
-                                final total = Text(
-                                  '\$${order.total.toStringAsFixed(2)}',
-                                  style: theme.textTheme.titleSmall
-                                      ?.copyWith(fontWeight: FontWeight.bold),
-                                );
-
-                                if (narrow) {
-                                  return Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      date,
-                                      const SizedBox(height: 6),
-                                      total
-                                    ],
-                                  );
-                                }
-
-                                return Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [date, total],
-                                );
-                              },
-                            ),
-                            const SizedBox(height: 10),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 6,
-                              children: [
-                                OutlinedButton.icon(
-                                  onPressed: () => _showRatingDialog(
-                                      context, order.restaurant),
-                                  icon: const Icon(Icons.star_border, size: 18),
-                                  label: const Text('Rate & Review'),
+                          const SizedBox(height: 8),
+                          ...ongoingOrders.map(
+                            (ongoing) => Card(
+                              color: const Color(0xFFFFF7ED),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              child: ListTile(
+                                title: Text(
+                                  '#${ongoing.id.substring(ongoing.id.length - 6)} • ${ongoing.restaurantName}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                              ],
+                                subtitle: Text(
+                                  '${ongoing.items.join(', ')}\nETA: ${ongoing.etaMinutes} min',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                trailing: ElevatedButton(
+                                  onPressed: () => context.go(
+                                    '/order-tracking?orderId=${ongoing.id}',
+                                  ),
+                                  child: const Text('Track'),
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ],
-              ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Past Orders',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                          const SizedBox(height: 8),
+                        ],
+                        ...orders.map((order) {
+                          final orderId = (order['id'] ?? '').toString();
+                          final status =
+                              (order['status'] ?? 'pending').toString();
+                          final restaurantName =
+                              (order['restaurantName'] ?? 'Restaurant')
+                                  .toString();
+                          final totalAmount =
+                              ((order['totalAmount'] ?? 0) as num).toDouble();
+                          final orderDate =
+                              _formatOrderDate(order['createdAt']?.toString());
+                          final itemNames = _itemsFromOrder(order);
+
+                          return Card(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final narrow = constraints.maxWidth < 360;
+                                      final idText = Text(
+                                        '#${orderId.length >= 6 ? orderId.substring(0, 6) : orderId}',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.bold),
+                                      );
+                                      final badge = StatusBadge(status: status);
+
+                                      if (narrow) {
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            idText,
+                                            const SizedBox(height: 6),
+                                            badge,
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [idText, badge],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    restaurantName,
+                                    style: theme.textTheme.bodyMedium,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    itemNames.isEmpty
+                                        ? 'No line items available'
+                                        : itemNames.join(', '),
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: theme.textTheme.bodySmall
+                                        ?.copyWith(color: theme.hintColor),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final narrow = constraints.maxWidth < 320;
+                                      final date = Text(
+                                        orderDate,
+                                        style: theme.textTheme.bodySmall,
+                                      );
+                                      final total = Text(
+                                        '\$${totalAmount.toStringAsFixed(2)}',
+                                        style: theme.textTheme.titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.bold),
+                                      );
+
+                                      if (narrow) {
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            date,
+                                            const SizedBox(height: 6),
+                                            total
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceBetween,
+                                        children: [date, total],
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(height: 10),
+                                  Wrap(
+                                    spacing: 8,
+                                    runSpacing: 6,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () => _showRatingDialog(
+                                            context, restaurantName),
+                                        icon: const Icon(Icons.star_border,
+                                            size: 18),
+                                        label: const Text('Rate & Review'),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ],
+                    ),
             ),
           ],
         ),
@@ -268,13 +347,51 @@ class UserOrderHistoryScreen extends ConsumerWidget {
 }
 
 /// User Favorites Screen
-class UserFavoritesScreen extends StatelessWidget {
+class UserFavoritesScreen extends ConsumerStatefulWidget {
   const UserFavoritesScreen({Key? key}) : super(key: key);
+
+  @override
+  ConsumerState<UserFavoritesScreen> createState() =>
+      _UserFavoritesScreenState();
+}
+
+class _UserFavoritesScreenState extends ConsumerState<UserFavoritesScreen> {
+  List<Map<String, dynamic>> _favorites = [];
+  bool _isLoading = false;
+
+  Future<void> _loadFavorites() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final rows = await ApiClient().getMyFavorites(token: token);
+      if (!mounted) return;
+      setState(() {
+        _favorites = rows;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadFavorites();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final restaurants = MockDataService.restaurants;
+    final restaurants = _favorites;
     final isCompact = MediaQuery.of(context).size.width < 900;
 
     return Scaffold(
@@ -309,104 +426,145 @@ class UserFavoritesScreen extends StatelessWidget {
             if (!isCompact)
               const UserDashboardSidebar(currentRoute: '/dashboard/favorites'),
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final width = constraints.maxWidth;
-                  final crossAxisCount = width > 900
-                      ? 3
-                      : width > 620
-                          ? 2
-                          : 1;
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : LayoutBuilder(
+                      builder: (context, constraints) {
+                        final width = constraints.maxWidth;
+                        final crossAxisCount = width > 900
+                            ? 3
+                            : width > 620
+                                ? 2
+                                : 1;
 
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(16),
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: crossAxisCount,
-                      childAspectRatio: crossAxisCount == 1 ? 1.3 : 0.9,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
+                        return GridView.builder(
+                          padding: const EdgeInsets.all(16),
+                          gridDelegate:
+                              SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            childAspectRatio: crossAxisCount == 1 ? 1.3 : 0.9,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                          ),
+                          itemCount: restaurants.length,
+                          itemBuilder: (context, index) {
+                            final restaurant = restaurants[index];
+                            final restaurantData = (restaurant['restaurant']
+                                    is Map<String, dynamic>)
+                                ? restaurant['restaurant']
+                                    as Map<String, dynamic>
+                                : <String, dynamic>{};
+                            final name =
+                                (restaurantData['name'] ?? 'Restaurant')
+                                    .toString();
+                            final cuisine =
+                                (restaurantData['cuisine'] ?? '').toString();
+                            final rating = restaurantData['rating'] ?? 0;
+                            final image = restaurantData['image']?.toString();
+                            return Card(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(12),
+                                    ),
+                                    child: image == null || image.isEmpty
+                                        ? Container(
+                                            height:
+                                                crossAxisCount == 1 ? 160 : 120,
+                                            color: Colors.grey[300],
+                                            child: Center(
+                                              child: Icon(
+                                                Icons.restaurant,
+                                                size: 40,
+                                                color: theme.primaryColor,
+                                              ),
+                                            ),
+                                          )
+                                        : Image.network(
+                                            image,
+                                            height:
+                                                crossAxisCount == 1 ? 160 : 120,
+                                            width: double.infinity,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) =>
+                                                Container(
+                                              height: crossAxisCount == 1
+                                                  ? 160
+                                                  : 120,
+                                              color: Colors.grey[300],
+                                              child: Center(
+                                                child: Icon(
+                                                  Icons.restaurant,
+                                                  size: 40,
+                                                  color: theme.primaryColor,
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                  ),
+                                  Expanded(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(12),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            name,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.titleSmall
+                                                ?.copyWith(
+                                                    fontWeight:
+                                                        FontWeight.bold),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            cuisine,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodySmall,
+                                          ),
+                                          const Spacer(),
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.spaceBetween,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  const Icon(
+                                                    Icons.star,
+                                                    size: 14,
+                                                    color: Colors.amber,
+                                                  ),
+                                                  const SizedBox(width: 2),
+                                                  Text(
+                                                    '$rating',
+                                                    style: theme
+                                                        .textTheme.bodySmall,
+                                                  ),
+                                                ],
+                                              ),
+                                              const Icon(
+                                                Icons.favorite,
+                                                size: 16,
+                                                color: Colors.red,
+                                              ),
+                                            ],
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
                     ),
-                    itemCount: restaurants.length,
-                    itemBuilder: (context, index) {
-                      final restaurant = restaurants[index];
-                      return Card(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              height: crossAxisCount == 1 ? 160 : 120,
-                              decoration: BoxDecoration(
-                                color: Colors.grey[300],
-                                borderRadius: const BorderRadius.vertical(
-                                  top: Radius.circular(12),
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.restaurant,
-                                  size: 40,
-                                  color: theme.primaryColor,
-                                ),
-                              ),
-                            ),
-                            Expanded(
-                              child: Padding(
-                                padding: const EdgeInsets.all(12),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      restaurant.name,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.titleSmall
-                                          ?.copyWith(
-                                              fontWeight: FontWeight.bold),
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      restaurant.cuisine,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.bodySmall,
-                                    ),
-                                    const Spacer(),
-                                    Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceBetween,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            const Icon(
-                                              Icons.star,
-                                              size: 14,
-                                              color: Colors.amber,
-                                            ),
-                                            const SizedBox(width: 2),
-                                            Text(
-                                              '${restaurant.rating}',
-                                              style: theme.textTheme.bodySmall,
-                                            ),
-                                          ],
-                                        ),
-                                        const Icon(
-                                          Icons.favorite,
-                                          size: 16,
-                                          color: Colors.red,
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
             ),
           ],
         ),
@@ -418,42 +576,85 @@ class UserFavoritesScreen extends StatelessWidget {
 }
 
 /// User Addresses Screen
-class UserAddressesScreen extends StatefulWidget {
+class UserAddressesScreen extends ConsumerStatefulWidget {
   const UserAddressesScreen({Key? key}) : super(key: key);
 
   @override
-  State<UserAddressesScreen> createState() => _UserAddressesScreenState();
+  ConsumerState<UserAddressesScreen> createState() =>
+      _UserAddressesScreenState();
 }
 
-class _UserAddressesScreenState extends State<UserAddressesScreen> {
+class _UserAddressesScreenState extends ConsumerState<UserAddressesScreen> {
   late List<Address> addresses;
+  bool _isLoading = false;
+
+  String _composeCityStateZip(String city, String state, String? postalCode) {
+    final cityPart = city.trim();
+    final stateZip = [state.trim(), (postalCode ?? '').trim()]
+        .where((v) => v.isNotEmpty)
+        .join(' ');
+    if (cityPart.isEmpty) return stateZip;
+    if (stateZip.isEmpty) return cityPart;
+    return '$cityPart, $stateZip';
+  }
+
+  ({String city, String state, String postalCode}) _splitCityStateZip(
+      String value) {
+    final parts = value.split(',').map((e) => e.trim()).toList();
+    final city = parts.isNotEmpty ? parts.first : '';
+    final stateZip = parts.length > 1 ? parts[1] : '';
+    final pieces =
+        stateZip.split(RegExp(r'\s+')).where((e) => e.isNotEmpty).toList();
+    final state = pieces.isNotEmpty ? pieces.first : '';
+    final postalCode = pieces.length > 1 ? pieces.sublist(1).join(' ') : '';
+    return (city: city, state: state, postalCode: postalCode);
+  }
+
+  Address _fromApiAddress(Map<String, dynamic> json) {
+    final city = (json['city'] ?? '').toString();
+    final state = (json['state'] ?? '').toString();
+    final postal = json['postalCode']?.toString();
+
+    return Address(
+      id: (json['id'] ?? '').toString(),
+      label: (json['label'] ?? 'Address').toString(),
+      address: (json['streetAddress'] ?? '').toString(),
+      cityStateZip: _composeCityStateZip(city, state, postal),
+      isDefault: json['isDefault'] == true,
+    );
+  }
+
+  Future<void> _loadAddresses() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final api = ApiClient();
+      final rows = await api.getMyAddresses(token: token);
+      if (!mounted) return;
+      setState(() {
+        addresses = rows.map(_fromApiAddress).toList();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    addresses = [
-      Address(
-        id: 'addr_1',
-        label: 'Home',
-        address: '123 Main Street',
-        cityStateZip: 'New York, NY 10001',
-        isDefault: true,
-      ),
-      Address(
-        id: 'addr_2',
-        label: 'Office',
-        address: '456 Park Avenue',
-        cityStateZip: 'New York, NY 10022',
-        isDefault: false,
-      ),
-      Address(
-        id: 'addr_3',
-        label: 'Gym',
-        address: '789 Fitness Lane',
-        cityStateZip: 'New York, NY 10010',
-        isDefault: false,
-      ),
-    ];
+    addresses = [];
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadAddresses();
+    });
   }
 
   void _showAddAddressDialog({Address? address}) {
@@ -461,19 +662,54 @@ class _UserAddressesScreenState extends State<UserAddressesScreen> {
       context: context,
       builder: (context) => AddAddressDialog(
         initialAddress: address,
-        onSave: (newAddress) {
-          setState(() {
+        onSave: (newAddress) async {
+          final token = ref.read(authProvider).token;
+          if (token == null || token.isEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Please login again.')),
+            );
+            return;
+          }
+
+          final cityState = _splitCityStateZip(newAddress.cityStateZip);
+
+          try {
+            final api = ApiClient();
             if (address != null) {
-              // Edit existing address
-              final index = addresses.indexWhere((a) => a.id == address.id);
-              if (index >= 0) {
-                addresses[index] = newAddress;
-              }
+              await api.updateMyAddress(
+                token: token,
+                addressId: address.id,
+                payload: {
+                  'label': newAddress.label,
+                  'streetAddress': newAddress.address,
+                  'city': cityState.city,
+                  'state': cityState.state,
+                  'postalCode': cityState.postalCode,
+                  'isDefault': newAddress.isDefault,
+                },
+              );
             } else {
-              // Add new address
-              addresses.add(newAddress);
+              await api.createMyAddress(
+                token: token,
+                payload: {
+                  'label': newAddress.label,
+                  'streetAddress': newAddress.address,
+                  'city': cityState.city,
+                  'state': cityState.state,
+                  'postalCode': cityState.postalCode,
+                  'isDefault': newAddress.isDefault,
+                },
+              );
             }
-          });
+
+            await _loadAddresses();
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text(e.toString().replaceAll('Exception: ', ''))),
+            );
+          }
         },
       ),
     );
@@ -491,14 +727,31 @@ class _UserAddressesScreenState extends State<UserAddressesScreen> {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              setState(() {
-                addresses.removeWhere((a) => a.id == id);
-              });
+            onPressed: () async {
+              final token = ref.read(authProvider).token;
               Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Address deleted')),
-              );
+              if (token == null || token.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Please login again.')),
+                );
+                return;
+              }
+
+              try {
+                await ApiClient().deleteMyAddress(token: token, addressId: id);
+                await _loadAddresses();
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Address deleted')),
+                );
+              } catch (e) {
+                if (!mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                      content:
+                          Text(e.toString().replaceAll('Exception: ', ''))),
+                );
+              }
             },
             child: const Text('Delete', style: TextStyle(color: Colors.red)),
           ),
@@ -507,13 +760,24 @@ class _UserAddressesScreenState extends State<UserAddressesScreen> {
     );
   }
 
-  void _setAsDefault(String id) {
-    setState(() {
-      // Remove default from all addresses and set new default
-      addresses = addresses.map((addr) {
-        return addr.copyWith(isDefault: addr.id == id);
-      }).toList();
-    });
+  void _setAsDefault(String id) async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login again.')),
+      );
+      return;
+    }
+
+    try {
+      await ApiClient().setDefaultMyAddress(token: token, addressId: id);
+      await _loadAddresses();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
   }
 
   @override
@@ -544,119 +808,124 @@ class _UserAddressesScreenState extends State<UserAddressesScreen> {
             if (!isCompact)
               const UserDashboardSidebar(currentRoute: '/dashboard/addresses'),
             Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: addresses.length,
-                itemBuilder: (context, index) {
-                  final addr = addresses[index];
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Padding(
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : ListView.builder(
                       padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          LayoutBuilder(
-                            builder: (context, constraints) {
-                              final narrow = constraints.maxWidth < 360;
+                      itemCount: addresses.length,
+                      itemBuilder: (context, index) {
+                        final addr = addresses[index];
+                        return Card(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final narrow = constraints.maxWidth < 360;
 
-                              final labelRow = Row(
-                                children: [
-                                  Icon(
-                                    Icons.location_on,
-                                    color: theme.primaryColor,
-                                    size: 20,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(
-                                    addr.label,
-                                    style: theme.textTheme.titleSmall
-                                        ?.copyWith(fontWeight: FontWeight.bold),
-                                  ),
-                                ],
-                              );
-
-                              final badge = addr.isDefault
-                                  ? Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 8,
-                                        vertical: 4,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            theme.primaryColor.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: Text(
-                                        'Default',
-                                        style: TextStyle(
+                                    final labelRow = Row(
+                                      children: [
+                                        Icon(
+                                          Icons.location_on,
                                           color: theme.primaryColor,
-                                          fontSize: 12,
+                                          size: 20,
                                         ),
-                                      ),
-                                    )
-                                  : const SizedBox.shrink();
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          addr.label,
+                                          style: theme.textTheme.titleSmall
+                                              ?.copyWith(
+                                                  fontWeight: FontWeight.bold),
+                                        ),
+                                      ],
+                                    );
 
-                              if (narrow) {
-                                return Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                    final badge = addr.isDefault
+                                        ? Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 8,
+                                              vertical: 4,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: theme.primaryColor
+                                                  .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              'Default',
+                                              style: TextStyle(
+                                                color: theme.primaryColor,
+                                                fontSize: 12,
+                                              ),
+                                            ),
+                                          )
+                                        : const SizedBox.shrink();
+
+                                    if (narrow) {
+                                      return Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          labelRow,
+                                          if (addr.isDefault) ...[
+                                            const SizedBox(height: 6),
+                                            badge,
+                                          ],
+                                        ],
+                                      );
+                                    }
+
+                                    return Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [labelRow, badge],
+                                    );
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  addr.address,
+                                  style: theme.textTheme.bodySmall,
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  addr.cityStateZip,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    color: Colors.grey[600],
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  alignment: WrapAlignment.end,
+                                  spacing: 8,
+                                  runSpacing: 6,
                                   children: [
-                                    labelRow,
-                                    if (addr.isDefault) ...[
-                                      const SizedBox(height: 6),
-                                      badge,
-                                    ],
+                                    if (!addr.isDefault)
+                                      TextButton(
+                                        onPressed: () => _setAsDefault(addr.id),
+                                        child: const Text('Set Default'),
+                                      ),
+                                    TextButton(
+                                      onPressed: () =>
+                                          _showAddAddressDialog(address: addr),
+                                      child: const Text('Edit'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => _deleteAddress(addr.id),
+                                      child: const Text('Delete'),
+                                    ),
                                   ],
-                                );
-                              }
-
-                              return Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [labelRow, badge],
-                              );
-                            },
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            addr.address,
-                            style: theme.textTheme.bodySmall,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            addr.cityStateZip,
-                            style: theme.textTheme.bodySmall?.copyWith(
-                              color: Colors.grey[600],
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            alignment: WrapAlignment.end,
-                            spacing: 8,
-                            runSpacing: 6,
-                            children: [
-                              if (!addr.isDefault)
-                                TextButton(
-                                  onPressed: () => _setAsDefault(addr.id),
-                                  child: const Text('Set Default'),
-                                ),
-                              TextButton(
-                                onPressed: () =>
-                                    _showAddAddressDialog(address: addr),
-                                child: const Text('Edit'),
-                              ),
-                              TextButton(
-                                onPressed: () => _deleteAddress(addr.id),
-                                child: const Text('Delete'),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
             ),
           ],
         ),

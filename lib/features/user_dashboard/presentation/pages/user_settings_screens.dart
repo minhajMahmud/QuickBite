@@ -5,57 +5,113 @@ import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 import '../../../authentication/data/models/user_role.dart';
+import '../../../authentication/data/services/api_client.dart';
 import '../../../../config/theme/app_theme.dart';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../widgets/user_dashboard_sidebar.dart';
 
 /// User Notifications Screen
-class UserNotificationsScreen extends ConsumerWidget {
+class UserNotificationsScreen extends ConsumerStatefulWidget {
   const UserNotificationsScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<UserNotificationsScreen> createState() =>
+      _UserNotificationsScreenState();
+}
+
+class _UserNotificationsScreenState
+    extends ConsumerState<UserNotificationsScreen> {
+  List<Map<String, dynamic>> _notifications = [];
+  bool _isLoading = false;
+
+  Future<void> _loadNotifications() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _isLoading = true);
+    try {
+      final rows = await ApiClient().getMyNotifications(token: token);
+      if (!mounted) return;
+      setState(() {
+        _notifications = rows;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _markAllRead() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    try {
+      await ApiClient().markAllNotificationsRead(token: token);
+      await _loadNotifications();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    }
+  }
+
+  String _formatTime(String? iso) {
+    if (iso == null || iso.isEmpty) return 'just now';
+    final parsed = DateTime.tryParse(iso);
+    if (parsed == null) return 'just now';
+    final diff = DateTime.now().difference(parsed.toLocal());
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inHours < 1) return '${diff.inMinutes} min ago';
+    if (diff.inDays < 1) return '${diff.inHours} hours ago';
+    return '${diff.inDays} days ago';
+  }
+
+  IconData _iconForType(String? type) {
+    final t = (type ?? '').toLowerCase();
+    if (t.contains('offer') || t.contains('promo')) return Icons.local_offer;
+    if (t.contains('order') || t.contains('delivery')) {
+      return Icons.shopping_bag;
+    }
+    return Icons.notifications;
+  }
+
+  Color _colorForType(String? type) {
+    final t = (type ?? '').toLowerCase();
+    if (t.contains('offer') || t.contains('promo')) return Colors.orange;
+    if (t.contains('order') || t.contains('delivery')) return Colors.blue;
+    return Colors.purple;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadNotifications();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isCompact = MediaQuery.of(context).size.width < 900;
     final preferences = ref.watch(notificationPreferencesProvider);
 
-    final notifications = [
-      {
-        'title': 'Order Delivered',
-        'message': 'Your order from The Golden Grill has been delivered',
-        'time': '2 hours ago',
-        'icon': Icons.check_circle,
-        'color': Colors.green,
-      },
-      {
-        'title': 'Order Confirmed',
-        'message': 'Sakura House confirmed your order',
-        'time': '5 hours ago',
-        'icon': Icons.shopping_bag,
-        'color': Colors.blue,
-      },
-      {
-        'title': 'Special Offer',
-        'message': '20% off on your next order at Bella Napoli',
-        'time': '1 day ago',
-        'icon': Icons.local_offer,
-        'color': Colors.orange,
-      },
-      {
-        'title': 'Loyalty Points',
-        'message': 'You earned 50 loyalty points!',
-        'time': '2 days ago',
-        'icon': Icons.card_giftcard,
-        'color': Colors.purple,
-      },
-    ];
-
     final filteredNotifications = preferences.notificationsEnabled
-        ? notifications.where((notif) {
-            final title = (notif['title'] as String).toLowerCase();
-            final isPromotion = title.contains('offer');
-            final isOrderUpdate = title.contains('order');
+        ? _notifications.where((notif) {
+            final title = (notif['title'] ?? '').toString().toLowerCase();
+            final type = (notif['type'] ?? '').toString().toLowerCase();
+            final isPromotion = title.contains('offer') ||
+                type.contains('offer') ||
+                type.contains('promo');
+            final isOrderUpdate = title.contains('order') ||
+                type.contains('order') ||
+                type.contains('delivery');
 
             if (isPromotion && !preferences.promotions) {
               return false;
@@ -65,7 +121,7 @@ class UserNotificationsScreen extends ConsumerWidget {
             }
             return true;
           }).toList()
-        : <Map<String, Object>>[];
+        : <Map<String, dynamic>>[];
 
     return Scaffold(
       drawer: isCompact
@@ -104,7 +160,7 @@ class UserNotificationsScreen extends ConsumerWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.mark_email_read_outlined),
-                      onPressed: () {},
+                      onPressed: _markAllRead,
                     ),
                     const SizedBox(width: 8),
                     const CircleAvatar(
@@ -115,70 +171,84 @@ class UserNotificationsScreen extends ConsumerWidget {
                   ],
                 ),
                 Expanded(
-                  child: filteredNotifications.isEmpty
-                      ? const Center(
-                          child: Text('No notifications for current settings.'),
-                        )
-                      : ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: filteredNotifications.length,
-                          itemBuilder: (context, index) {
-                            final notif = filteredNotifications[index];
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              child: Padding(
-                                padding: const EdgeInsets.all(16),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Container(
-                                      width: 44,
-                                      height: 44,
-                                      decoration: BoxDecoration(
-                                        color: (notif['color'] as Color)
-                                            .withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Icon(
-                                        notif['icon'] as IconData,
-                                        color: notif['color'] as Color,
-                                        size: 22,
-                                      ),
+                  child: _isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : filteredNotifications.isEmpty
+                          ? const Center(
+                              child: Text(
+                                  'No notifications for current settings.'),
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.all(16),
+                              itemCount: filteredNotifications.length,
+                              itemBuilder: (context, index) {
+                                final notif = filteredNotifications[index];
+                                return Card(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(16),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: _colorForType(notif['type'])
+                                                .withOpacity(0.1),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                          ),
+                                          child: Icon(
+                                            _iconForType(notif['type']),
+                                            color: _colorForType(notif['type']),
+                                            size: 22,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                (notif['title'] ??
+                                                        'Notification')
+                                                    .toString(),
+                                                style: theme
+                                                    .textTheme.titleSmall
+                                                    ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.bold),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                (notif['message'] ?? '')
+                                                    .toString(),
+                                                style:
+                                                    theme.textTheme.bodySmall,
+                                                maxLines: 2,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                              const SizedBox(height: 8),
+                                              Text(
+                                                _formatTime(
+                                                  notif['createdAt']
+                                                      ?.toString(),
+                                                ),
+                                                style:
+                                                    theme.textTheme.labelSmall,
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                     ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            notif['title'] as String,
-                                            style: theme.textTheme.titleSmall
-                                                ?.copyWith(
-                                                    fontWeight:
-                                                        FontWeight.bold),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            notif['message'] as String,
-                                            style: theme.textTheme.bodySmall,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          const SizedBox(height: 8),
-                                          Text(
-                                            notif['time'] as String,
-                                            style: theme.textTheme.labelSmall,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                                  ),
+                                );
+                              },
+                            ),
                 ),
               ],
             ),
@@ -315,8 +385,8 @@ class _UserSettingsScreenState extends ConsumerState<UserSettingsScreen> {
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: () {
-                ref.read(authProvider.notifier).updateCustomerProfile(
+              onPressed: () async {
+                await ref.read(authProvider.notifier).updateCustomerProfile(
                       fullName: nameController.text.trim(),
                       email: emailController.text.trim(),
                       phone: phoneController.text.trim(),
@@ -324,9 +394,17 @@ class _UserSettingsScreenState extends ConsumerState<UserSettingsScreen> {
                       dateOfBirth: dob,
                       gender: gender,
                     );
+
+                final latestAuthState = ref.read(authProvider);
                 Navigator.of(context).pop();
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Profile updated successfully')),
+                  SnackBar(
+                    content: Text(
+                      latestAuthState.error ??
+                          latestAuthState.successMessage ??
+                          'Profile update completed',
+                    ),
+                  ),
                 );
               },
               child: const Text('Save'),

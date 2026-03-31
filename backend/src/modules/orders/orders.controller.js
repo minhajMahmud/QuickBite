@@ -1,17 +1,17 @@
 const ordersService = require('./orders.service');
 
-function listOrders(req, res, next) {
+async function listOrders(req, res, next) {
   try {
-    const orders = ordersService.listOrdersForRole(req.user);
+    const orders = await ordersService.listOrdersForRole(req.user);
     res.json({ orders });
   } catch (error) {
     next(error);
   }
 }
 
-function createOrder(req, res, next) {
+async function createOrder(req, res, next) {
   try {
-    const order = ordersService.createOrder({
+    const order = await ordersService.createOrder({
       userId: req.user.sub,
       restaurantId: req.body.restaurantId,
       items: req.body.items,
@@ -24,9 +24,9 @@ function createOrder(req, res, next) {
   }
 }
 
-function updateStatus(req, res, next) {
+async function updateStatus(req, res, next) {
   try {
-    const order = ordersService.updateOrderStatus(req.params.id, req.body.status, req.user);
+    const order = await ordersService.updateOrderStatus(req.params.id, req.body.status, req.user);
     res.json({ order });
   } catch (error) {
     next(error);

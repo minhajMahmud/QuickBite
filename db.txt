@@ -1,0 +1,25 @@
+QuickBite DB updates for user profile fields
+==========================================
+
+1) Add new columns to users table (PostgreSQL)
+----------------------------------------------
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS date_of_birth DATE;
+
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS gender VARCHAR(30);
+
+2) Verify columns exist
+-----------------------
+SELECT column_name, data_type
+FROM information_schema.columns
+WHERE table_name = 'users'
+  AND column_name IN ('date_of_birth', 'gender')
+ORDER BY column_name;
+
+3) Verify profile data stored
+-----------------------------
+SELECT id, name, email, phone, date_of_birth, gender, updated_at
+FROM users
+ORDER BY updated_at DESC
+LIMIT 20;

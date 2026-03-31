@@ -24,6 +24,11 @@ function hashToken(token) {
  * Register user with email verification
  */
 async function register({ name, email, password, role = 'customer' }) {
+    const allowedRoles = new Set(['customer', 'restaurant', 'delivery_partner']);
+    if (!allowedRoles.has(role)) {
+      throw new ApiError(400, 'Invalid role selected for registration');
+    }
+
   console.log('📝 [AUTH_SERVICE] Starting user registration...');
   console.log(`   Email: ${email}`);
   console.log(`   Name: ${name}`);
@@ -53,7 +58,7 @@ async function register({ name, email, password, role = 'customer' }) {
     email,
     passwordHash,
     role,
-    approved: role === 'customer', // Auto-approve customers
+    approved: role === 'customer', // Business accounts require admin approval
     emailVerified: false, // Not verified yet
     emailVerificationToken,
     emailVerificationTokenExpiresAt: tokenExpiry,

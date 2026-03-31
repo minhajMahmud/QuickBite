@@ -5,6 +5,7 @@ import '../../data/models/models.dart';
 import '../../data/datasources/catalog_api_service.dart';
 import '../../data/datasources/offers_api_service.dart';
 import '../../data/datasources/dashboard_api_service.dart' as dashboard;
+import '../../features/authentication/presentation/providers/auth_provider.dart';
 
 class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   ThemeModeNotifier() : super(ThemeMode.light);
@@ -104,6 +105,7 @@ final restaurantMenuProvider = FutureProvider.family<List<FoodItem>, String>((
 /// Dashboard API Service Provider
 final dashboardApiServiceProvider =
     Provider<dashboard.DashboardApiService>((ref) {
+  final token = ref.watch(authProvider.select((state) => state.token));
   final dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 15),
@@ -112,7 +114,11 @@ final dashboardApiServiceProvider =
   );
 
   const baseUrl = 'http://localhost:3000';
-  return dashboard.DashboardApiService(dio: dio, baseUrl: baseUrl);
+  return dashboard.DashboardApiService(
+    dio: dio,
+    baseUrl: baseUrl,
+    authToken: token,
+  );
 });
 
 /// User Stats Provider - Real-time user dashboard statistics

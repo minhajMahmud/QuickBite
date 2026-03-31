@@ -7,7 +7,7 @@ import '../../features/cart/presentation/pages/cart_screen.dart';
 import '../../features/cart/presentation/pages/checkout_screen.dart';
 import '../../features/cart/presentation/pages/order_tracking_screen.dart';
 // NEW Enhanced Dashboard Screens
-import '../../features/user_dashboard/presentation/pages/user_overview_screen.dart';
+import '../../features/home/presentation/pages/customer_dashboard_screen.dart';
 import '../../features/user_dashboard/presentation/pages/user_detail_screens.dart';
 import '../../features/user_dashboard/presentation/pages/user_settings_screens.dart';
 import '../../features/admin_panel/presentation/pages/admin_dashboard_screen.dart';
@@ -197,7 +197,7 @@ class AppRoutes {
       ),
       GoRoute(
         path: userDashboard,
-        builder: (context, state) => const UserOverviewScreen(),
+        builder: (context, state) => const CustomerDashboardScreen(),
         name: 'user-dashboard',
         routes: [
           GoRoute(

@@ -84,6 +84,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _setState(state.copyWith(
         isAuthenticated: false, // Email needs verification
         isLoading: false,
+        token: authResponse.token,
         user: authResponse.user,
         successMessage: (response['message']?.toString().isNotEmpty ?? false)
             ? '${response['message']} (saved to PostgreSQL)'
@@ -111,6 +112,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       _setState(state.copyWith(
         isAuthenticated: true,
         isLoading: false,
+        token: authResponse.token,
         user: authResponse.user,
         successMessage: 'Logged in successfully (backend verified).',
       ));
@@ -130,44 +132,65 @@ class AuthNotifier extends StateNotifier<AuthState> {
     _setState(const AuthState());
   }
 
-  void updateCustomerProfile({
+  Future<void> updateCustomerProfile({
     required String fullName,
     required String email,
     required String phone,
     required String profilePicture,
     DateTime? dateOfBirth,
     String? gender,
-  }) {
+  }) async {
     final currentUser = state.user;
-    if (currentUser == null) return;
+    final token = state.token;
+    if (currentUser == null || token == null || token.isEmpty) {
+      _setState(state.copyWith(error: 'User not authenticated.'));
+      return;
+    }
 
-    final oldEmail = currentUser.email.trim().toLowerCase();
+    _setState(state.copyWith(isLoading: true, error: null));
+
     final newEmail = email.trim().toLowerCase();
-    final currentAccount = _registeredAccounts[oldEmail];
-    if (currentAccount == null) return;
 
-    final updatedUser = currentUser.copyWith(
-      name: fullName,
-      email: newEmail,
-      phone: phone,
-      avatar: profilePicture,
-      dateOfBirth: dateOfBirth,
-      clearDateOfBirth: dateOfBirth == null,
-      gender: gender,
-      clearGender: (gender == null || gender.isEmpty),
-    );
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.updateProfile(
+        token: token,
+        payload: {
+          'name': fullName.trim(),
+          'email': newEmail,
+          'phone': phone.trim(),
+          'avatar': profilePicture.trim(),
+          'dateOfBirth': dateOfBirth?.toIso8601String(),
+          'gender': (gender == null || gender.isEmpty) ? null : gender,
+        },
+      );
 
-    _registeredAccounts.remove(oldEmail);
-    _registeredAccounts[newEmail] = _RegisteredAccount(
-      user: updatedUser,
-      passwordHash: currentAccount.passwordHash,
-    );
+      final backendUser = response['user'] is Map<String, dynamic>
+          ? AuthUser.fromJson(response['user'] as Map<String, dynamic>)
+          : currentUser;
 
-    _setState(state.copyWith(
-      user: updatedUser,
-      successMessage: 'Profile updated successfully!',
-      error: null,
-    ));
+      final updatedUser = backendUser.copyWith(
+        role: currentUser.role,
+        dateOfBirth: dateOfBirth,
+        clearDateOfBirth: dateOfBirth == null,
+        gender: gender,
+        clearGender: (gender == null || gender.isEmpty),
+      );
+
+      _setState(state.copyWith(
+        isLoading: false,
+        user: updatedUser,
+        successMessage: response['message']?.toString().isNotEmpty == true
+            ? response['message'].toString()
+            : 'Profile updated successfully!',
+        error: null,
+      ));
+    } catch (e) {
+      _setState(state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      ));
+    }
   }
 
   bool changePassword({

@@ -69,14 +69,33 @@ class Order {
 class DashboardApiService {
   final Dio _dio;
   final String baseUrl;
+  final String? authToken;
 
-  DashboardApiService({Dio? dio, required this.baseUrl}) : _dio = dio ?? Dio();
+  DashboardApiService({
+    Dio? dio,
+    required this.baseUrl,
+    this.authToken,
+  }) : _dio = dio ?? Dio();
+
+  Options _authorizedOptions() {
+    if (authToken == null || authToken!.isEmpty) {
+      return Options();
+    }
+
+    return Options(headers: {
+      'Authorization': 'Bearer $authToken',
+      'Accept': 'application/json',
+    });
+  }
 
   /// Get user statistics and KPIs
   Future<UserStats> getUserStats() async {
     try {
       print('📊 Fetching user stats from $baseUrl/api/v1/users/me');
-      final response = await _dio.get('$baseUrl/api/v1/users/me');
+      final response = await _dio.get(
+        '$baseUrl/api/v1/users/me',
+        options: _authorizedOptions(),
+      );
 
       if (response.statusCode == 200) {
         print('✅ User stats received: ${response.data}');
@@ -84,17 +103,25 @@ class DashboardApiService {
         // Fetch orders separately
         final ordersResponse = await getRecentOrders();
 
-        final stats = UserStats.fromJson(response.data);
+        final payload = response.data;
+        Map<String, dynamic> userJson = {};
+        if (payload is Map<String, dynamic>) {
+          if (payload['user'] is Map<String, dynamic>) {
+            userJson = payload['user'] as Map<String, dynamic>;
+          } else {
+            userJson = payload;
+          }
+        }
 
         // Create enriched stats with orders
         return UserStats(
           totalOrders: ordersResponse.length,
           totalSpent: _calculateTotalSpent(ordersResponse),
-          loyaltyPoints: stats.loyaltyPoints,
-          savedAddresses: stats.savedAddresses,
+          loyaltyPoints: (userJson['loyaltyPoints'] ?? 0) as int,
+          savedAddresses: (userJson['savedAddresses'] ?? 0) as int,
           recentOrders: ordersResponse.take(5).toList(),
-          userName: stats.userName,
-          userEmail: stats.userEmail,
+          userName: (userJson['name'] ?? 'User').toString(),
+          userEmail: (userJson['email'] ?? '').toString(),
         );
       }
 
@@ -109,7 +136,10 @@ class DashboardApiService {
   Future<List<Order>> getRecentOrders() async {
     try {
       print('📋 Fetching recent orders from $baseUrl/api/v1/orders');
-      final response = await _dio.get('$baseUrl/api/v1/orders');
+      final response = await _dio.get(
+        '$baseUrl/api/v1/orders',
+        options: _authorizedOptions(),
+      );
 
       if (response.statusCode == 200) {
         print('✅ Orders received: ${response.data}');
@@ -120,6 +150,10 @@ class DashboardApiService {
               .toList();
         } else if (response.data is Map && response.data['data'] is List) {
           return (response.data['data'] as List)
+              .map((order) => Order.fromJson(order as Map<String, dynamic>))
+              .toList();
+        } else if (response.data is Map && response.data['orders'] is List) {
+          return (response.data['orders'] as List)
               .map((order) => Order.fromJson(order as Map<String, dynamic>))
               .toList();
         }

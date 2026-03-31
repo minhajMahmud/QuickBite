@@ -222,7 +222,8 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   ),
                 ],
               ),
-              if (_selectedRole == UserRole.restaurant)
+              if (_selectedRole == UserRole.restaurant ||
+                  _selectedRole == UserRole.deliveryPartner)
                 Padding(
                   padding: const EdgeInsets.only(top: 16, bottom: 16),
                   child: Container(
@@ -238,7 +239,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Restaurant accounts require admin approval before access is granted.',
+                            '${_selectedRole == UserRole.restaurant ? 'Restaurant' : 'Delivery partner'} accounts require admin confirmation before first access.',
                             style: TextStyle(
                               color: Colors.orange[700],
                               fontSize: 12,

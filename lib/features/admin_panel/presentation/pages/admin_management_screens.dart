@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
+import '../../../authentication/data/services/api_client.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
 import '../widgets/admin_sidebar.dart';
 
 class _AdminPageScaffold extends StatelessWidget {
@@ -65,50 +68,291 @@ class _AdminPageScaffold extends StatelessWidget {
 }
 
 /// User Management Screen
-class UserManagementScreen extends StatelessWidget {
+class UserManagementScreen extends ConsumerStatefulWidget {
   const UserManagementScreen({Key? key}) : super(key: key);
+
+  @override
+  ConsumerState<UserManagementScreen> createState() =>
+      _UserManagementScreenState();
+}
+
+class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
+  List<Map<String, dynamic>> _users = [];
+  List<Map<String, dynamic>> _pendingUsers = [];
+  bool _isLoading = false;
+  String? _updatingUserId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadUsers());
+  }
+
+  Future<void> _loadUsers() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please log in as admin to manage users.')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    try {
+      final api = ApiClient();
+      final users = await api.getAdminUsers(token: token);
+      final pending = await api.getPendingApprovalUsers(token: token);
+      if (!mounted) return;
+      setState(() {
+        _users = users;
+        _pendingUsers = pending;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _setApproval({
+    required String userId,
+    required bool approved,
+  }) async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _updatingUserId = userId);
+    try {
+      final res = await ApiClient().setUserApprovalStatus(
+        token: token,
+        userId: userId,
+        approved: approved,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            (res['message']?.toString().isNotEmpty ?? false)
+                ? res['message'].toString()
+                : (approved
+                    ? 'Account approved successfully'
+                    : 'Account rejected successfully'),
+          ),
+        ),
+      );
+
+      await _loadUsers();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingUserId = null);
+    }
+  }
+
+  String _roleLabel(String? role) {
+    switch (role) {
+      case 'restaurant':
+        return 'Restaurant';
+      case 'delivery_partner':
+        return 'Delivery Partner';
+      case 'admin':
+        return 'Admin';
+      default:
+        return 'Customer';
+    }
+  }
+
+  Color _roleColor(String? role) {
+    switch (role) {
+      case 'restaurant':
+        return Colors.deepOrange;
+      case 'delivery_partner':
+        return Colors.indigo;
+      case 'admin':
+        return Colors.purple;
+      default:
+        return Colors.teal;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final approvedCount = _users.where((u) => u['approved'] == true).length;
+    final pendingCount = _pendingUsers.length;
 
     return _AdminPageScaffold(
       currentRoute: '/admin/users',
       title: 'User Management',
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 10,
-        itemBuilder: (context, index) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: theme.primaryColor.withOpacity(0.1),
-                child: Text('U${index + 1}'),
-              ),
-              title: Text('User ${index + 1}'),
-              subtitle: const Text('user@example.com'),
-              trailing: PopupMenuButton(
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    child: Text('Edit'),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : RefreshIndicator(
+              onRefresh: _loadUsers,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      _AccountSummaryCard(
+                        icon: Icons.groups_2_outlined,
+                        label: 'Total Users',
+                        value: '${_users.length}',
+                      ),
+                      _AccountSummaryCard(
+                        icon: Icons.hourglass_top,
+                        label: 'Pending Approval',
+                        value: '$pendingCount',
+                        valueColor: Colors.orange,
+                      ),
+                      _AccountSummaryCard(
+                        icon: Icons.verified_outlined,
+                        label: 'Approved',
+                        value: '$approvedCount',
+                        valueColor: Colors.green,
+                      ),
+                    ],
                   ),
-                  const PopupMenuItem(
-                    child: Text('Ban'),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Pending Signups',
+                    style: theme.textTheme.titleLarge
+                        ?.copyWith(fontWeight: FontWeight.bold),
                   ),
-                  const PopupMenuItem(
-                    child: Text('Delete'),
-                  ),
+                  const SizedBox(height: 8),
+                  if (_pendingUsers.isEmpty)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          'No pending account approvals 🎉',
+                          style: theme.textTheme.bodyMedium,
+                        ),
+                      ),
+                    )
+                  else
+                    ..._pendingUsers.map((user) {
+                      final role = user['role']?.toString();
+                      final color = _roleColor(role);
+                      final userId = user['id']?.toString() ?? '';
+                      final isUpdating = _updatingUserId == userId;
+
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        child: Padding(
+                          padding: const EdgeInsets.all(14),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  CircleAvatar(
+                                    backgroundColor: color.withOpacity(0.12),
+                                    child: Text(
+                                      (user['name']?.toString().isNotEmpty ??
+                                              false)
+                                          ? user['name'].toString()[0]
+                                          : '?',
+                                      style: TextStyle(color: color),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          user['name']?.toString() ?? 'Unknown',
+                                          style: theme.textTheme.titleMedium,
+                                        ),
+                                        Text(
+                                          user['email']?.toString() ?? '-',
+                                          style: theme.textTheme.bodySmall,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: color.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(99),
+                                    ),
+                                    child: Text(
+                                      _roleLabel(role),
+                                      style: TextStyle(
+                                        color: color,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  ElevatedButton.icon(
+                                    onPressed: isUpdating
+                                        ? null
+                                        : () => _setApproval(
+                                              userId: userId,
+                                              approved: true,
+                                            ),
+                                    icon: const Icon(Icons.check),
+                                    label: const Text('Approve'),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      foregroundColor: Colors.white,
+                                    ),
+                                  ),
+                                  OutlinedButton.icon(
+                                    onPressed: isUpdating
+                                        ? null
+                                        : () => _setApproval(
+                                              userId: userId,
+                                              approved: false,
+                                            ),
+                                    icon: const Icon(Icons.close),
+                                    label: const Text('Reject'),
+                                  ),
+                                  if (isUpdating)
+                                    const SizedBox(
+                                      height: 18,
+                                      width: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }),
                 ],
               ),
             ),
-          );
-        },
-      ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: _loadUsers,
         heroTag: 'admin-users-fab',
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.refresh),
       ),
     );
   }

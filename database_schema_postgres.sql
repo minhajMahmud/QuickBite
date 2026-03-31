@@ -21,8 +21,12 @@ CREATE TABLE IF NOT EXISTS users (
     name VARCHAR(255) NOT NULL,
     email VARCHAR(255) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
+    role VARCHAR(20) NOT NULL DEFAULT 'customer' CHECK (role IN ('customer', 'restaurant', 'delivery_partner', 'admin')),
+    approved BOOLEAN NOT NULL DEFAULT TRUE,
     avatar VARCHAR(500),
     phone VARCHAR(20),
+    date_of_birth DATE,
+    gender VARCHAR(30),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'banned')),
     total_orders INT NOT NULL DEFAULT 0,
     total_spent NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
@@ -414,6 +418,7 @@ CREATE TABLE IF NOT EXISTS revenue_statistics (
 -- ============================================================================
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
+CREATE INDEX IF NOT EXISTS idx_users_role_approved ON users(role, approved);
 
 CREATE INDEX IF NOT EXISTS idx_user_addresses_user_id ON user_addresses(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_addresses_user_default ON user_addresses(user_id, is_default);
