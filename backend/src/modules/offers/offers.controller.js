@@ -20,6 +20,50 @@ async function getAllOffers(req, res, next) {
 }
 
 /**
+ * GET /api/v1/offers/admin/all
+ * Get all coupons for admin panel
+ */
+async function getAllCouponsForAdmin(req, res, next) {
+  try {
+    console.log('🎁 [OFFERS_CONTROLLER] GET /offers/admin/all requested');
+    const coupons = await service.getAllCouponsForAdmin();
+    res.json({
+      success: true,
+      message: `Found ${coupons.length} coupons`,
+      coupons,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * PATCH /api/v1/offers/admin/:id/status
+ * Manual close/reopen coupon
+ * Body: { isActive: boolean }
+ */
+async function setCouponStatus(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { isActive } = req.body || {};
+
+    if (typeof isActive !== 'boolean') {
+      throw new ApiError(400, 'Field "isActive" must be boolean');
+    }
+
+    const result = await service.setCouponActiveState(id, isActive);
+
+    res.json({
+      success: true,
+      message: result.message,
+      coupon: result.coupon,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * GET /api/v1/offers/:id
  * Get single offer by ID
  */
@@ -102,6 +146,8 @@ async function applyCoupon(req, res, next) {
 
 module.exports = {
   getAllOffers,
+  getAllCouponsForAdmin,
+  setCouponStatus,
   getOfferById,
   validateCoupon,
   applyCoupon,

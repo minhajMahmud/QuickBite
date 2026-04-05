@@ -42,6 +42,53 @@ async function listActiveOffers() {
 }
 
 /**
+ * Get all coupons for admin (active + closed + scheduled)
+ */
+async function listAllCouponsForAdmin() {
+  console.log('📝 [OFFERS_REPO] Fetching all coupons for admin...');
+
+  const query = `
+    SELECT
+      id,
+      code,
+      description,
+      discount_type,
+      discount_value,
+      COALESCE(max_discount, 0) as max_discount,
+      min_order_value,
+      max_usage,
+      current_usage,
+      usage_per_user,
+      valid_from,
+      valid_until,
+      is_active,
+      created_at,
+      updated_at,
+      CASE
+        WHEN is_active = FALSE THEN 'manual_closed'
+        WHEN valid_until IS NOT NULL AND valid_until <= NOW() THEN 'auto_closed_timer'
+        WHEN max_usage <> -1 AND current_usage >= max_usage THEN 'auto_closed_usage'
+        WHEN valid_from IS NOT NULL AND valid_from > NOW() THEN 'scheduled'
+        ELSE 'active'
+      END AS admin_state
+    FROM public.coupons
+    ORDER BY created_at DESC;
+  `;
+
+  try {
+    const { rows } = await pool.query(query);
+    console.log(`✅ [OFFERS_REPO] Found ${rows.length} coupons for admin`);
+    return rows;
+  } catch (error) {
+    console.error(
+      '❌ [OFFERS_REPO] Failed to fetch admin coupons:',
+      error.message
+    );
+    throw error;
+  }
+}
+
+/**
  * Get offer by code
  */
 async function getOfferByCode(code) {
@@ -130,6 +177,67 @@ async function getOfferById(id) {
 }
 
 /**
+ * Get coupon by ID regardless of active/valid window (admin use)
+ */
+async function getCouponByIdAny(id) {
+  const query = `
+    SELECT
+      id,
+      code,
+      description,
+      discount_type,
+      discount_value,
+      COALESCE(max_discount, 0) as max_discount,
+      min_order_value,
+      max_usage,
+      current_usage,
+      usage_per_user,
+      valid_from,
+      valid_until,
+      is_active,
+      created_at,
+      updated_at
+    FROM public.coupons
+    WHERE id = $1
+    LIMIT 1;
+  `;
+
+  const { rows } = await pool.query(query, [id]);
+  return rows[0] || null;
+}
+
+/**
+ * Set coupon active state (manual close / reopen)
+ */
+async function setCouponIsActive(id, isActive) {
+  const query = `
+    UPDATE public.coupons
+    SET is_active = $2,
+        updated_at = NOW()
+    WHERE id = $1
+    RETURNING
+      id,
+      code,
+      description,
+      discount_type,
+      discount_value,
+      COALESCE(max_discount, 0) as max_discount,
+      min_order_value,
+      max_usage,
+      current_usage,
+      usage_per_user,
+      valid_from,
+      valid_until,
+      is_active,
+      created_at,
+      updated_at;
+  `;
+
+  const { rows } = await pool.query(query, [id, isActive]);
+  return rows[0] || null;
+}
+
+/**
  * Check user usage of a coupon
  */
 async function getUserCouponUsage(userId, couponId) {
@@ -192,8 +300,11 @@ async function recordCouponUsage(userId, couponId) {
 
 module.exports = {
   listActiveOffers,
+  listAllCouponsForAdmin,
   getOfferByCode,
   getOfferById,
+  getCouponByIdAny,
+  setCouponIsActive,
   getUserCouponUsage,
   recordCouponUsage,
 };

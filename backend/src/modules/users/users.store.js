@@ -56,10 +56,10 @@ function withTransientFields(user) {
   if (!user) return null;
   const extra = transientUserFields.get(user.id) || {};
   return {
-    role: user.role || 'customer',
-    approved: user.approved ?? true,
     ...user,
     ...extra,
+    role: user.role || extra.role || 'customer',
+    approved: user.approved ?? extra.approved ?? true,
   };
 }
 

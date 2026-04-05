@@ -127,6 +127,62 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Request password reset email
+  Future<void> requestPasswordReset(String email) async {
+    _setState(state.copyWith(
+      isLoading: true,
+      error: null,
+      successMessage: null,
+    ));
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.requestPasswordReset(email);
+
+      _setState(state.copyWith(
+        isLoading: false,
+        successMessage: (response['message']?.toString().isNotEmpty ?? false)
+            ? response['message'].toString()
+            : 'If that email exists, we will send a password reset link.',
+        error: null,
+      ));
+    } catch (e) {
+      _setState(state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      ));
+    }
+  }
+
+  /// Reset password with email + token
+  Future<void> resetPassword({
+    required String email,
+    required String token,
+    required String newPassword,
+  }) async {
+    _setState(state.copyWith(
+      isLoading: true,
+      error: null,
+      successMessage: null,
+    ));
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.resetPassword(email, token, newPassword);
+
+      _setState(state.copyWith(
+        isLoading: false,
+        successMessage: (response['message']?.toString().isNotEmpty ?? false)
+            ? response['message'].toString()
+            : 'Password reset successfully. Please sign in again.',
+        error: null,
+      ));
+    } catch (e) {
+      _setState(state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      ));
+    }
+  }
+
   /// Logout user
   void logout() {
     _setState(const AuthState());

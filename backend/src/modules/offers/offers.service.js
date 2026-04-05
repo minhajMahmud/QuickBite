@@ -41,6 +41,33 @@ function toOfferModel(row) {
 }
 
 /**
+ * Convert database coupon to admin model (includes close state details)
+ */
+function toAdminCouponModel(row) {
+  const coupon = toOfferModel(row);
+  coupon.adminState = row.admin_state || 'active';
+
+  switch (coupon.adminState) {
+    case 'manual_closed':
+      coupon.closeReason = 'Manually closed by admin';
+      break;
+    case 'auto_closed_timer':
+      coupon.closeReason = 'Auto closed by timer';
+      break;
+    case 'auto_closed_usage':
+      coupon.closeReason = 'Auto closed by usage limit';
+      break;
+    case 'scheduled':
+      coupon.closeReason = 'Scheduled (not started yet)';
+      break;
+    default:
+      coupon.closeReason = 'Active';
+  }
+
+  return coupon;
+}
+
+/**
  * Get all active offers
  */
 async function getAllOffers() {
@@ -51,6 +78,71 @@ async function getAllOffers() {
   
   console.log(`✅ [OFFERS_SERVICE] Returning ${offers.length} offers`);
   return offers;
+}
+
+/**
+ * Get all coupons for admin panel (active + closed + scheduled)
+ */
+async function getAllCouponsForAdmin() {
+  console.log('🎁 [OFFERS_SERVICE] Fetching all coupons for admin...');
+
+  const rows = await repository.listAllCouponsForAdmin();
+  const coupons = rows.map(toAdminCouponModel);
+
+  console.log(`✅ [OFFERS_SERVICE] Returning ${coupons.length} admin coupons`);
+  return coupons;
+}
+
+/**
+ * Manually close/reopen coupon from admin panel
+ */
+async function setCouponActiveState(couponId, isActive) {
+  const coupon = await repository.getCouponByIdAny(couponId);
+  if (!coupon) {
+    throw new ApiError(404, 'Coupon not found');
+  }
+
+  if (isActive === true) {
+    const now = new Date();
+    const validUntil = coupon.valid_until ? new Date(coupon.valid_until) : null;
+    const validFrom = coupon.valid_from ? new Date(coupon.valid_from) : null;
+    const usageCapped = Number(coupon.max_usage) !== -1;
+    const usageExhausted = usageCapped && Number(coupon.current_usage) >= Number(coupon.max_usage);
+
+    if (validUntil && validUntil <= now) {
+      throw new ApiError(
+        400,
+        'Cannot reopen: coupon expired by timer. Extend validity first.'
+      );
+    }
+
+    if (usageExhausted) {
+      throw new ApiError(
+        400,
+        'Cannot reopen: coupon usage limit has already been reached.'
+      );
+    }
+
+    // If scheduled in future, reopening is allowed; it will remain scheduled until valid_from.
+    if (validFrom && validFrom > now) {
+      // intentionally allowed
+    }
+  }
+
+  const updated = await repository.setCouponIsActive(couponId, isActive);
+  if (!updated) {
+    throw new ApiError(500, 'Failed to update coupon state');
+  }
+
+  return {
+    coupon: toAdminCouponModel({
+      ...updated,
+      admin_state: isActive ? 'active' : 'manual_closed',
+    }),
+    message: isActive
+      ? 'Coupon reopened successfully'
+      : 'Coupon manually closed successfully',
+  };
 }
 
 /**
@@ -164,6 +256,8 @@ async function applyCoupon(couponCode, userId, orderAmount) {
 
 module.exports = {
   getAllOffers,
+  getAllCouponsForAdmin,
+  setCouponActiveState,
   getOfferById,
   validateCoupon,
   applyCoupon,

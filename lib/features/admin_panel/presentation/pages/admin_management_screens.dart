@@ -13,11 +13,12 @@ class _AdminPageScaffold extends StatelessWidget {
   final Widget? floatingActionButton;
 
   const _AdminPageScaffold({
+    Key? key,
     required this.currentRoute,
     required this.title,
     required this.body,
     this.floatingActionButton,
-  });
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -69,7 +70,7 @@ class _AdminPageScaffold extends StatelessWidget {
 
 /// User Management Screen
 class UserManagementScreen extends ConsumerStatefulWidget {
-  const UserManagementScreen({Key? key}) : super(key: key);
+  const UserManagementScreen({super.key});
 
   @override
   ConsumerState<UserManagementScreen> createState() =>
@@ -81,11 +82,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   List<Map<String, dynamic>> _pendingUsers = [];
   bool _isLoading = false;
   String? _updatingUserId;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadUsers());
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadUsers() async {
@@ -184,9 +193,289 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
   }
 
+  bool _matchesSearch(Map<String, dynamic> user) {
+    if (_searchQuery.trim().isEmpty) return true;
+    final q = _searchQuery.trim().toLowerCase();
+    final name = user['name']?.toString().toLowerCase() ?? '';
+    final email = user['email']?.toString().toLowerCase() ?? '';
+    final role = _roleLabel(user['role']?.toString()).toLowerCase();
+    return name.contains(q) || email.contains(q) || role.contains(q);
+  }
+
+  String _approvalLabel(bool approved) => approved ? 'Approved' : 'Pending';
+
+  Widget _buildSectionTitle(
+    BuildContext context, {
+    required String title,
+    required int count,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: theme.primaryColor),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.primaryColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.primaryColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildPendingUserCard(
+    BuildContext context,
+    Map<String, dynamic> user,
+  ) {
+    final theme = Theme.of(context);
+    final role = user['role']?.toString();
+    final color = _roleColor(role);
+    final userId = user['id']?.toString() ?? '';
+    final isUpdating = _updatingUserId == userId;
+    final name = user['name']?.toString() ?? 'Unknown';
+    final email = user['email']?.toString() ?? '-';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 14),
+      elevation: 3,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.08),
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 3,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.95),
+                  color.withValues(alpha: 0.55),
+                ],
+              ),
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  theme.cardColor,
+                  theme.cardColor.withValues(alpha: 0.95),
+                ],
+              ),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: color.withValues(alpha: 0.12),
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              name,
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(email, style: theme.textTheme.bodySmall),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 7,
+                        ),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(99),
+                          border: Border.all(
+                            color: color.withValues(alpha: 0.22),
+                          ),
+                        ),
+                        child: Text(
+                          _roleLabel(role),
+                          style: TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  Divider(
+                    color: theme.dividerColor.withValues(alpha: 0.2),
+                    height: 1,
+                  ),
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      FilledButton.icon(
+                        onPressed: isUpdating
+                            ? null
+                            : () => _setApproval(
+                                  userId: userId,
+                                  approved: true,
+                                ),
+                        icon: const Icon(Icons.check),
+                        label: const Text('Approve'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: isUpdating
+                            ? null
+                            : () => _setApproval(
+                                  userId: userId,
+                                  approved: false,
+                                ),
+                        icon: const Icon(Icons.close),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      if (isUpdating)
+                        const SizedBox(
+                          height: 18,
+                          width: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAccountRowCard(BuildContext context, Map<String, dynamic> user) {
+    final theme = Theme.of(context);
+    final role = user['role']?.toString();
+    final roleColor = _roleColor(role);
+    final approved = user['approved'] == true;
+    final name = user['name']?.toString() ?? 'Unknown';
+    final email = user['email']?.toString() ?? '-';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 2,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.14)),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        leading: CircleAvatar(
+          backgroundColor: roleColor.withValues(alpha: 0.12),
+          child: Text(
+            name.isNotEmpty ? name[0].toUpperCase() : '?',
+            style: TextStyle(color: roleColor, fontWeight: FontWeight.bold),
+          ),
+        ),
+        title: Text(
+          name,
+          style: theme.textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text('$email • ${_roleLabel(role)}'),
+        ),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: approved
+                ? Colors.green.withValues(alpha: 0.12)
+                : Colors.orange.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: (approved ? Colors.green : Colors.orange)
+                  .withValues(alpha: 0.25),
+            ),
+          ),
+          child: Text(
+            _approvalLabel(approved),
+            style: TextStyle(
+              color: approved ? Colors.green : Colors.orange,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final filteredUsers = _users.where(_matchesSearch).toList();
+    final filteredPending = _pendingUsers.where(_matchesSearch).toList();
     final approvedCount = _users.where((u) => u['approved'] == true).length;
     final pendingCount = _pendingUsers.length;
 
@@ -200,6 +489,62 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: theme.dividerColor.withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Account Operations Center',
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Review pending signups, monitor user roles, and keep account quality high.',
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.hintColor,
+                          ),
+                        ),
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _searchController,
+                          onChanged: (value) {
+                            setState(() => _searchQuery = value);
+                          },
+                          decoration: InputDecoration(
+                            hintText: 'Search by name, email, or role...',
+                            prefixIcon: const Icon(Icons.search),
+                            suffixIcon: _searchQuery.isEmpty
+                                ? null
+                                : IconButton(
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchQuery = '');
+                                    },
+                                    icon: const Icon(Icons.close),
+                                  ),
+                            filled: true,
+                            fillColor: theme.scaffoldBackgroundColor
+                                .withValues(alpha: 0.7),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
                   Wrap(
                     spacing: 12,
                     runSpacing: 12,
@@ -224,128 +569,49 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  Text(
-                    'Pending Signups',
-                    style: theme.textTheme.titleLarge
-                        ?.copyWith(fontWeight: FontWeight.bold),
+                  _buildSectionTitle(
+                    context,
+                    title: 'Pending Signups',
+                    count: filteredPending.length,
+                    icon: Icons.pending_actions_outlined,
                   ),
-                  const SizedBox(height: 8),
-                  if (_pendingUsers.isEmpty)
+                  const SizedBox(height: 10),
+                  if (filteredPending.isEmpty)
                     Card(
                       child: Padding(
                         padding: const EdgeInsets.all(18),
                         child: Text(
-                          'No pending account approvals 🎉',
+                          _searchQuery.isEmpty
+                              ? 'No pending account approvals 🎉'
+                              : 'No pending approvals for this search.',
                           style: theme.textTheme.bodyMedium,
                         ),
                       ),
                     )
                   else
-                    ..._pendingUsers.map((user) {
-                      final role = user['role']?.toString();
-                      final color = _roleColor(role);
-                      final userId = user['id']?.toString() ?? '';
-                      final isUpdating = _updatingUserId == userId;
-
-                      return Card(
-                        margin: const EdgeInsets.only(bottom: 10),
-                        child: Padding(
-                          padding: const EdgeInsets.all(14),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  CircleAvatar(
-                                    backgroundColor: color.withOpacity(0.12),
-                                    child: Text(
-                                      (user['name']?.toString().isNotEmpty ??
-                                              false)
-                                          ? user['name'].toString()[0]
-                                          : '?',
-                                      style: TextStyle(color: color),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          user['name']?.toString() ?? 'Unknown',
-                                          style: theme.textTheme.titleMedium,
-                                        ),
-                                        Text(
-                                          user['email']?.toString() ?? '-',
-                                          style: theme.textTheme.bodySmall,
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: color.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(99),
-                                    ),
-                                    child: Text(
-                                      _roleLabel(role),
-                                      style: TextStyle(
-                                        color: color,
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: [
-                                  ElevatedButton.icon(
-                                    onPressed: isUpdating
-                                        ? null
-                                        : () => _setApproval(
-                                              userId: userId,
-                                              approved: true,
-                                            ),
-                                    icon: const Icon(Icons.check),
-                                    label: const Text('Approve'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.green,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                  ),
-                                  OutlinedButton.icon(
-                                    onPressed: isUpdating
-                                        ? null
-                                        : () => _setApproval(
-                                              userId: userId,
-                                              approved: false,
-                                            ),
-                                    icon: const Icon(Icons.close),
-                                    label: const Text('Reject'),
-                                  ),
-                                  if (isUpdating)
-                                    const SizedBox(
-                                      height: 18,
-                                      width: 18,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ],
-                          ),
+                    ...filteredPending
+                        .map((user) => _buildPendingUserCard(context, user)),
+                  const SizedBox(height: 20),
+                  _buildSectionTitle(
+                    context,
+                    title: 'All Accounts',
+                    count: filteredUsers.length,
+                    icon: Icons.people_alt_outlined,
+                  ),
+                  const SizedBox(height: 10),
+                  if (filteredUsers.isEmpty)
+                    Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(18),
+                        child: Text(
+                          'No users match your current search.',
+                          style: theme.textTheme.bodyMedium,
                         ),
-                      );
-                    }),
+                      ),
+                    )
+                  else
+                    ...filteredUsers
+                        .map((user) => _buildAccountRowCard(context, user)),
                 ],
               ),
             ),
@@ -359,430 +625,1318 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 }
 
 /// Restaurant Management Screen
-class RestaurantManagementScreen extends StatelessWidget {
-  const RestaurantManagementScreen({Key? key}) : super(key: key);
+class RestaurantManagementScreen extends ConsumerStatefulWidget {
+  const RestaurantManagementScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
+  ConsumerState<RestaurantManagementScreen> createState() =>
+      _RestaurantManagementScreenState();
+}
 
-    return _AdminPageScaffold(
-      currentRoute: '/admin/restaurants',
-      title: 'Restaurant Management',
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: 8,
-        itemBuilder: (context, index) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: ListTile(
-              leading: Icon(Icons.restaurant, color: theme.primaryColor),
-              title: Text('Restaurant ${index + 1}'),
-              subtitle: const Text('Italian • Pizza • 4.7★'),
-              trailing: PopupMenuButton(
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    child: Text('Edit'),
+class _RestaurantManagementScreenState
+    extends ConsumerState<RestaurantManagementScreen> {
+  List<Map<String, dynamic>> _restaurants = [];
+  bool _isLoading = false;
+  String? _error;
+  String? _updatingRestaurantId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadRestaurants());
+  }
+
+  Future<void> _loadRestaurants() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Please log in as admin to manage restaurants.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final restaurants = await ApiClient().getAdminRestaurants(token: token);
+      if (!mounted) return;
+      setState(() => _restaurants = restaurants);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _setRestaurantApproval({
+    required String restaurantId,
+    required bool approved,
+  }) async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _updatingRestaurantId = restaurantId);
+    try {
+      final result = await ApiClient().setAdminRestaurantApproval(
+        token: token,
+        restaurantId: restaurantId,
+        approved: approved,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['message']?.toString() ??
+                (approved
+                    ? 'Restaurant approved successfully'
+                    : 'Restaurant rejected successfully'),
+          ),
+        ),
+      );
+
+      await _loadRestaurants();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingRestaurantId = null);
+    }
+  }
+
+  Future<void> _setRestaurantRestriction({
+    required String restaurantId,
+    required bool restricted,
+  }) async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _updatingRestaurantId = restaurantId);
+    try {
+      final result = await ApiClient().setAdminRestaurantRestriction(
+        token: token,
+        restaurantId: restaurantId,
+        restricted: restricted,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['message']?.toString() ??
+                (restricted
+                    ? 'Restaurant has been restricted'
+                    : 'Restaurant restriction removed'),
+          ),
+        ),
+      );
+
+      await _loadRestaurants();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingRestaurantId = null);
+    }
+  }
+
+  List<Map<String, dynamic>> get _requestRestaurants => _restaurants
+      .where((restaurant) => _stateOf(restaurant) == 'request')
+      .toList();
+
+  List<Map<String, dynamic>> get _activeRestaurants => _restaurants
+      .where((restaurant) => _stateOf(restaurant) == 'active')
+      .toList();
+
+  List<Map<String, dynamic>> get _restrictedRestaurants => _restaurants
+      .where((restaurant) => _stateOf(restaurant) == 'restricted')
+      .toList();
+
+  List<Map<String, dynamic>> get _closedRestaurants => _restaurants
+      .where((restaurant) => _stateOf(restaurant) == 'inactive')
+      .toList();
+
+  String _stateOf(Map<String, dynamic> restaurant) {
+    final state = restaurant['admin_state']?.toString().toLowerCase();
+    if (state != null && state.isNotEmpty) return state;
+
+    final ownerStatus = restaurant['owner_status']?.toString().toLowerCase();
+    final isApproved = restaurant['is_approved'] == true;
+    final status = restaurant['status']?.toString().toLowerCase();
+
+    if (ownerStatus == 'banned') return 'restricted';
+    if (!isApproved) return 'request';
+    if (status == 'open') return 'active';
+    return 'inactive';
+  }
+
+  String _stateLabel(String state) {
+    switch (state) {
+      case 'request':
+        return 'Request';
+      case 'restricted':
+        return 'Restricted';
+      case 'inactive':
+        return 'Closed';
+      default:
+        return 'Active';
+    }
+  }
+
+  Color _stateColor(String state) {
+    switch (state) {
+      case 'request':
+        return Colors.orange;
+      case 'restricted':
+        return Colors.redAccent;
+      case 'inactive':
+        return Colors.grey;
+      default:
+        return Colors.green;
+    }
+  }
+
+  String _fmtRating(dynamic value) {
+    final rating =
+        (value is num) ? value.toDouble() : double.tryParse('$value');
+    if (rating == null) return '-';
+    return rating.toStringAsFixed(1);
+  }
+
+  String _fmtMoney(dynamic value) {
+    final amount =
+        (value is num) ? value.toDouble() : double.tryParse('$value') ?? 0;
+    return amount.toStringAsFixed(2);
+  }
+
+  String _fmtDate(dynamic value) {
+    final parsed = value == null ? null : DateTime.tryParse(value.toString());
+    if (parsed == null) return '-';
+    final day = parsed.day.toString().padLeft(2, '0');
+    final month = parsed.month.toString().padLeft(2, '0');
+    final year = parsed.year.toString();
+    return '$day/$month/$year';
+  }
+
+  Widget _buildSectionTitle(
+    BuildContext context, {
+    required String title,
+    required int count,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: theme.primaryColor),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.primaryColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.primaryColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _fullAddress(Map<String, dynamic> restaurant) {
+    final parts = [
+      restaurant['street_address']?.toString(),
+      restaurant['city']?.toString(),
+      restaurant['state']?.toString(),
+      restaurant['postal_code']?.toString(),
+    ]
+        .whereType<String>()
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+
+    return parts.isEmpty ? 'Not provided' : parts.join(', ');
+  }
+
+  Widget _buildStatCard({
+    required ThemeData theme,
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color color,
+  }) {
+    return Card(
+      elevation: 2,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.14)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(15),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(11),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    color.withValues(alpha: 0.95),
+                    color.withValues(alpha: 0.65)
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: Colors.white),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  const PopupMenuItem(
-                    child: Text('View Orders'),
-                  ),
-                  const PopupMenuItem(
-                    child: Text('Delete'),
+                  Text(
+                    label,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.hintColor,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildStateChip(BuildContext context, String state) {
+    final color = _stateColor(state);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+      ),
+      child: Text(
+        _stateLabel(state),
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMetricPill(String label, String value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w600,
+          fontSize: 12,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showRestaurantDetails(Map<String, dynamic> restaurant) async {
+    final state = _stateOf(restaurant);
+    final color = _stateColor(state);
+    final restaurantId = restaurant['id']?.toString() ?? '';
+
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        final theme = Theme.of(context);
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.82,
+          minChildSize: 0.6,
+          maxChildSize: 0.95,
+          builder: (_, controller) {
+            return SingleChildScrollView(
+              controller: controller,
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          color.withValues(alpha: 0.95),
+                          color.withValues(alpha: 0.65),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 28,
+                          backgroundColor: Colors.white.withValues(alpha: 0.16),
+                          child: Text(
+                            (restaurant['name']?.toString().isNotEmpty ?? false)
+                                ? restaurant['name'].toString()[0].toUpperCase()
+                                : '?',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 20,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                restaurant['name']?.toString() ?? 'Restaurant',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                '${restaurant['cuisine']?.toString() ?? 'Food'} • ${restaurant['price_range']?.toString() ?? '\$\$'}',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: Colors.white.withValues(alpha: 0.95),
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: [
+                                  _buildStateChip(context, state),
+                                  _buildMetricPill(
+                                      'Rating',
+                                      _fmtRating(restaurant['rating']),
+                                      Colors.white),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    'Restaurant details',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                      context,
+                      'Owner',
+                      restaurant['owner_name']?.toString().isNotEmpty == true
+                          ? restaurant['owner_name'].toString()
+                          : 'Unknown',
+                      restaurant['owner_email']?.toString().isNotEmpty == true
+                          ? restaurant['owner_email'].toString()
+                          : '-'),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    context,
+                    'Contact',
+                    restaurant['phone']?.toString().isNotEmpty == true
+                        ? restaurant['phone'].toString()
+                        : 'No phone',
+                    restaurant['email']?.toString().isNotEmpty == true
+                        ? restaurant['email'].toString()
+                        : 'No email',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    context,
+                    'Location',
+                    _fullAddress(restaurant),
+                    'Created: ${_fmtDate(restaurant['created_at'])}',
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInfoCard(
+                    context,
+                    'Performance',
+                    'Orders: ${restaurant['total_orders']?.toString() ?? '0'}',
+                    'Revenue: \$${_fmtMoney(restaurant['total_revenue'])}',
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: state == 'restricted'
+                          ? Colors.red.withValues(alpha: 0.08)
+                          : Colors.orange.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: (state == 'restricted'
+                                ? Colors.redAccent
+                                : Colors.orange)
+                            .withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          state == 'restricted'
+                              ? Icons.lock
+                              : Icons.info_outline,
+                          color: state == 'restricted'
+                              ? Colors.redAccent
+                              : Colors.orange,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            state == 'restricted'
+                                ? 'This restaurant is restricted. The owner account is banned, so dashboard, menu, and order access are blocked.'
+                                : state == 'request'
+                                    ? 'This is a pending restaurant request. Review details before approval.'
+                                    : 'This restaurant is active and allowed to manage menu and orders.',
+                            style: theme.textTheme.bodyMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  if (restaurantId.isNotEmpty)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (state == 'request') ...[
+                          FilledButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _setRestaurantApproval(
+                                restaurantId: restaurantId,
+                                approved: true,
+                              );
+                            },
+                            icon: const Icon(Icons.check),
+                            label: const Text('Approve'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _setRestaurantApproval(
+                                restaurantId: restaurantId,
+                                approved: false,
+                              );
+                            },
+                            icon: const Icon(Icons.close),
+                            label: const Text('Reject'),
+                          ),
+                        ],
+                        if (state == 'restricted')
+                          FilledButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _setRestaurantRestriction(
+                                restaurantId: restaurantId,
+                                restricted: false,
+                              );
+                            },
+                            icon: const Icon(Icons.lock_open),
+                            label: const Text('Unban / Restore Access'),
+                          )
+                        else
+                          OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _setRestaurantRestriction(
+                                restaurantId: restaurantId,
+                                restricted: true,
+                              );
+                            },
+                            icon: const Icon(Icons.block),
+                            label: const Text('Ban / Restrict'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                            ),
+                          ),
+                      ],
+                    ),
+                  if (_updatingRestaurantId == restaurantId)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 12),
+                      child: LinearProgressIndicator(minHeight: 3),
+                    ),
+                  const SizedBox(height: 18),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Close'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildInfoCard(
+    BuildContext context,
+    String title,
+    String primary,
+    String secondary,
+  ) {
+    final theme = Theme.of(context);
+    return Card(
+      elevation: 1,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.14)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: theme.textTheme.titleSmall?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(primary, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 4),
+            Text(
+              secondary,
+              style:
+                  theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRestaurantCard(
+      BuildContext context, Map<String, dynamic> restaurant) {
+    final theme = Theme.of(context);
+    final state = _stateOf(restaurant);
+    final color = _stateColor(state);
+    final name = restaurant['name']?.toString() ?? 'Restaurant';
+    final cuisine = restaurant['cuisine']?.toString() ?? 'Food';
+    final rating = _fmtRating(restaurant['rating']);
+    final deliveryTime = restaurant['delivery_time']?.toString() ?? 'N/A';
+    final orders = restaurant['total_orders']?.toString() ?? '0';
+    final revenue = _fmtMoney(restaurant['total_revenue']);
+    final ownerName = restaurant['owner_name']?.toString().isNotEmpty == true
+        ? restaurant['owner_name'].toString()
+        : 'No owner linked';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 3,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.08),
+      surfaceTintColor: Colors.transparent,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: theme.dividerColor.withValues(alpha: 0.14)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 4,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.95),
+                  color.withValues(alpha: 0.55)
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: color.withValues(alpha: 0.12),
+                      child: Text(
+                        name.isNotEmpty ? name[0].toUpperCase() : '?',
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text('$cuisine • $deliveryTime • ★ $rating'),
+                        ],
+                      ),
+                    ),
+                    _buildStateChip(context, state),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _buildMetricPill('Orders', orders, Colors.orange),
+                    _buildMetricPill('Revenue', '\$$revenue', Colors.green),
+                    _buildMetricPill('Owner', ownerName, Colors.blue),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  restaurant['description']?.toString().isNotEmpty == true
+                      ? restaurant['description'].toString()
+                      : 'No description available.',
+                  style: theme.textTheme.bodyMedium,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => _showRestaurantDetails(restaurant),
+                      icon: const Icon(Icons.visibility_outlined),
+                      label: const Text('View details'),
+                    ),
+                    const SizedBox(width: 8),
+                    if (state == 'restricted')
+                      TextButton.icon(
+                        onPressed: () => _showRestaurantDetails(restaurant),
+                        icon: const Icon(Icons.lock_outline),
+                        label: const Text('Restricted'),
+                      )
+                    else if (state == 'request')
+                      TextButton.icon(
+                        onPressed: () => _showRestaurantDetails(restaurant),
+                        icon: const Icon(Icons.pending_actions_outlined),
+                        label: const Text('Review request'),
+                      )
+                    else
+                      TextButton.icon(
+                        onPressed: () => _showRestaurantDetails(restaurant),
+                        icon: const Icon(Icons.info_outline),
+                        label: const Text('Profile'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final requestRestaurants = _requestRestaurants;
+    final restrictedRestaurants = _restrictedRestaurants;
+    final activeRestaurants = _activeRestaurants;
+    final closedRestaurants = _closedRestaurants;
+
+    return _AdminPageScaffold(
+      currentRoute: '/admin/restaurants',
+      title: 'Restaurant Management',
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Failed to load restaurants',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _loadRestaurants,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadRestaurants,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _buildStatCard(
+                            theme: theme,
+                            icon: Icons.storefront_outlined,
+                            label: 'Total Restaurants',
+                            value: '${_restaurants.length}',
+                            color: Colors.orange,
+                          ),
+                          _buildStatCard(
+                            theme: theme,
+                            icon: Icons.pending_actions_outlined,
+                            label: 'Requests',
+                            value: '${requestRestaurants.length}',
+                            color: Colors.orange,
+                          ),
+                          _buildStatCard(
+                            theme: theme,
+                            icon: Icons.verified_outlined,
+                            label: 'Active',
+                            value: '${activeRestaurants.length}',
+                            color: Colors.green,
+                          ),
+                          _buildStatCard(
+                            theme: theme,
+                            icon: Icons.lock_outline,
+                            label: 'Restricted',
+                            value: '${restrictedRestaurants.length}',
+                            color: Colors.redAccent,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.dividerColor.withValues(alpha: 0.14),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.verified_user_outlined,
+                                color: Colors.orange),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Restaurant requests are shown separately, and restaurants linked to banned owner accounts are marked as restricted. Restricted restaurants cannot access dashboard orders, menu editing, or analytics.',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      if (requestRestaurants.isNotEmpty) ...[
+                        _buildSectionTitle(
+                          context,
+                          title: 'Request Restaurants',
+                          count: requestRestaurants.length,
+                          icon: Icons.pending_actions_outlined,
+                        ),
+                        const SizedBox(height: 10),
+                        ...requestRestaurants.map((restaurant) =>
+                            _buildRestaurantCard(context, restaurant)),
+                        const SizedBox(height: 18),
+                      ],
+                      if (restrictedRestaurants.isNotEmpty) ...[
+                        _buildSectionTitle(
+                          context,
+                          title: 'Restricted / Banned Owners',
+                          count: restrictedRestaurants.length,
+                          icon: Icons.lock_outline,
+                        ),
+                        const SizedBox(height: 10),
+                        ...restrictedRestaurants.map((restaurant) =>
+                            _buildRestaurantCard(context, restaurant)),
+                        const SizedBox(height: 18),
+                      ],
+                      _buildSectionTitle(
+                        context,
+                        title: 'Approved Restaurants',
+                        count: activeRestaurants.length,
+                        icon: Icons.verified_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      if (activeRestaurants.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(18),
+                            child: Text(
+                              'No approved restaurants found.',
+                              style: theme.textTheme.bodyMedium,
+                            ),
+                          ),
+                        )
+                      else
+                        ...activeRestaurants.map((restaurant) =>
+                            _buildRestaurantCard(context, restaurant)),
+                      if (closedRestaurants.isNotEmpty) ...[
+                        const SizedBox(height: 18),
+                        _buildSectionTitle(
+                          context,
+                          title: 'Closed Restaurants',
+                          count: closedRestaurants.length,
+                          icon: Icons.do_not_disturb_alt_outlined,
+                        ),
+                        const SizedBox(height: 10),
+                        ...closedRestaurants.map((restaurant) =>
+                            _buildRestaurantCard(context, restaurant)),
+                      ],
+                    ],
+                  ),
+                ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: _loadRestaurants,
         heroTag: 'admin-restaurants-fab',
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.refresh),
       ),
     );
   }
 }
 
 /// Delivery Management Screen
-class DeliveryManagementScreen extends StatefulWidget {
-  const DeliveryManagementScreen({Key? key}) : super(key: key);
+class DeliveryManagementScreen extends ConsumerStatefulWidget {
+  const DeliveryManagementScreen({super.key});
 
   @override
-  State<DeliveryManagementScreen> createState() =>
+  ConsumerState<DeliveryManagementScreen> createState() =>
       _DeliveryManagementScreenState();
 }
 
-class _DeliveryManagementScreenState extends State<DeliveryManagementScreen> {
-  final List<_DeliveryPartnerAccount> _accounts = [
-    _DeliveryPartnerAccount(
-      name: 'Mike Reynolds',
-      email: 'mike.reynolds@quickbite.com',
-      rating: 4.9,
-      deliveries: 2340,
-      isActive: true,
-      isSuspended: false,
-    ),
-    _DeliveryPartnerAccount(
-      name: 'Sarah Kim',
-      email: 'sarah.kim@quickbite.com',
-      rating: 4.8,
-      deliveries: 1890,
-      isActive: true,
-      isSuspended: false,
-    ),
-    _DeliveryPartnerAccount(
-      name: 'Carlos Mendez',
-      email: 'carlos.mendez@quickbite.com',
-      rating: 4.7,
-      deliveries: 1560,
-      isActive: false,
-      isSuspended: false,
-    ),
-    _DeliveryPartnerAccount(
-      name: 'Priya Sharma',
-      email: 'priya.sharma@quickbite.com',
-      rating: 4.9,
-      deliveries: 2100,
-      isActive: true,
-      isSuspended: false,
-    ),
-  ];
+class _DeliveryManagementScreenState
+    extends ConsumerState<DeliveryManagementScreen> {
+  List<Map<String, dynamic>> _deliveryAccounts = [];
+  bool _isLoading = false;
+  String? _error;
 
-  Future<void> _showAddAccountDialog() async {
-    final nameController = TextEditingController();
-    final emailController = TextEditingController();
-
-    await showDialog<void>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Add Delivery Partner'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(
-                  labelText: 'Full Name',
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailController,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(
-                  labelText: 'Email',
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final name = nameController.text.trim();
-                final email = emailController.text.trim().toLowerCase();
-                if (name.isEmpty || email.isEmpty) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Name and email are required.'),
-                    ),
-                  );
-                  return;
-                }
-
-                setState(() {
-                  _accounts.insert(
-                    0,
-                    _DeliveryPartnerAccount(
-                      name: name,
-                      email: email,
-                      rating: 0,
-                      deliveries: 0,
-                      isActive: true,
-                      isSuspended: false,
-                    ),
-                  );
-                });
-
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(this.context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Delivery partner account added.'),
-                  ),
-                );
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
-
-    nameController.dispose();
-    emailController.dispose();
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _loadDeliveryAccounts());
   }
 
-  Future<void> _removeAccount(int index) async {
-    final account = _accounts[index];
-    final shouldDelete = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text('Remove account'),
-          content: Text(
-            'Delete ${account.name} (${account.email})?',
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-              child: const Text('Delete'),
-            ),
-          ],
-        );
-      },
-    );
-
-    if (shouldDelete != true) return;
-
-    setState(() {
-      _accounts.removeAt(index);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Delivery partner account removed.')),
-    );
-  }
-
-  void _toggleActive(int index) {
-    final account = _accounts[index];
-    if (account.isSuspended) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unsuspend account first before activating.'),
-        ),
-      );
+  Future<void> _loadDeliveryAccounts() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      setState(() {
+        _error = 'Please log in as admin to manage deliveries.';
+      });
       return;
     }
 
     setState(() {
-      _accounts[index] = account.copyWith(isActive: !account.isActive);
+      _isLoading = true;
+      _error = null;
     });
+
+    try {
+      final api = ApiClient();
+      final users = await api.getAdminUsers(token: token);
+
+      final deliveryAccounts = users.where((u) {
+        final role = u['role']?.toString();
+        return role == 'delivery_partner';
+      }).toList();
+
+      if (!mounted) return;
+      setState(() {
+        _deliveryAccounts = deliveryAccounts;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
-  void _toggleSuspended(int index) {
-    final account = _accounts[index];
-    final nextSuspended = !account.isSuspended;
-    setState(() {
-      _accounts[index] = account.copyWith(
-        isSuspended: nextSuspended,
-        isActive: nextSuspended ? false : account.isActive,
-      );
-    });
+  String _statusOf(Map<String, dynamic> account) {
+    final status = account['status']?.toString().toLowerCase() ?? 'active';
+    final approved = account['approved'] == true;
+
+    if (status == 'banned' || status == 'suspended') return 'suspended';
+    if (!approved) return 'pending';
+    return 'active';
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'suspended':
+        return 'Suspended';
+      case 'pending':
+        return 'Pending Approval';
+      default:
+        return 'Active';
+    }
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'suspended':
+        return Colors.redAccent;
+      case 'pending':
+        return Colors.orange;
+      default:
+        return Colors.green;
+    }
+  }
+
+  Widget _buildSectionTitle(
+    BuildContext context, {
+    required String title,
+    required int count,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: theme.primaryColor),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.primaryColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.primaryColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDeliveryCard(
+      BuildContext context, Map<String, dynamic> account) {
+    final theme = Theme.of(context);
+    final name = account['name']?.toString() ?? 'Unknown';
+    final email = account['email']?.toString() ?? '-';
+    final status = _statusOf(account);
+    final color = _statusColor(status);
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.dividerColor.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 3,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.95),
+                  color.withValues(alpha: 0.55),
+                ],
+              ),
+            ),
+          ),
+          ListTile(
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            leading: CircleAvatar(
+              backgroundColor: color.withValues(alpha: 0.12),
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : '?',
+                style: TextStyle(color: color, fontWeight: FontWeight.w700),
+              ),
+            ),
+            title: Text(
+              name,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w700),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text('$email • ${_statusLabel(status)}'),
+            ),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(color: color.withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                _statusLabel(status),
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final totalAccounts = _accounts.length;
-    final activeAccounts = _accounts.where((a) => a.isActive).length;
-    final suspendedAccounts = _accounts.where((a) => a.isSuspended).length;
+    final totalAccounts = _deliveryAccounts.length;
+    final activeList =
+        _deliveryAccounts.where((a) => _statusOf(a) == 'active').toList();
+    final pendingList =
+        _deliveryAccounts.where((a) => _statusOf(a) == 'pending').toList();
+    final suspendedList =
+        _deliveryAccounts.where((a) => _statusOf(a) == 'suspended').toList();
 
     return _AdminPageScaffold(
       currentRoute: '/admin/deliveries',
       title: 'Delivery Partner Accounts',
       floatingActionButton: FloatingActionButton(
-        onPressed: _showAddAccountDialog,
+        onPressed: _loadDeliveryAccounts,
         heroTag: 'admin-delivery-accounts-fab',
-        child: const Icon(Icons.person_add_alt_1),
+        child: const Icon(Icons.refresh),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              _AccountSummaryCard(
-                icon: Icons.people_outline,
-                label: 'Total Accounts',
-                value: '$totalAccounts',
-              ),
-              _AccountSummaryCard(
-                icon: Icons.check_circle_outline,
-                label: 'Active',
-                value: '$activeAccounts',
-                valueColor: Colors.green,
-              ),
-              _AccountSummaryCard(
-                icon: Icons.block_outlined,
-                label: 'Suspended',
-                value: '$suspendedAccounts',
-                valueColor: Colors.redAccent,
-              ),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Text(
-                'Manage Delivery Partner Accounts',
-                style: theme.textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _showAddAccountDialog,
-                icon: const Icon(Icons.add),
-                label: const Text('Add Account'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (_accounts.isEmpty)
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Text(
-                  'No delivery partner accounts yet.',
-                  style:
-                      theme.textTheme.bodyLarge?.copyWith(color: Colors.grey),
-                ),
-              ),
-            )
-          else
-            ...List.generate(_accounts.length, (index) {
-              final account = _accounts[index];
-              final statusColor = account.isSuspended
-                  ? Colors.redAccent
-                  : account.isActive
-                      ? Colors.green
-                      : Colors.grey;
-              final statusLabel = account.isSuspended
-                  ? 'Suspended'
-                  : account.isActive
-                      ? 'Active'
-                      : 'Inactive';
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.orange.withOpacity(0.12),
-                    child: Text(
-                      account.name.isNotEmpty
-                          ? account.name[0].toUpperCase()
-                          : '?',
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Failed to load delivery accounts',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _loadDeliveryAccounts,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
                     ),
                   ),
-                  title: Text(account.name),
-                  subtitle: Text(
-                    '${account.email}\n${account.deliveries} deliveries • ★ ${account.rating.toStringAsFixed(1)}',
-                  ),
-                  isThreeLine: true,
-                  trailing: PopupMenuButton<String>(
-                    onSelected: (value) {
-                      switch (value) {
-                        case 'toggle_active':
-                          _toggleActive(index);
-                          break;
-                        case 'toggle_suspend':
-                          _toggleSuspended(index);
-                          break;
-                        case 'remove':
-                          _removeAccount(index);
-                          break;
-                      }
-                    },
-                    itemBuilder: (context) => [
-                      PopupMenuItem(
-                        value: 'toggle_active',
-                        child: Text(
-                          account.isActive ? 'Deactivate' : 'Activate',
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadDeliveryAccounts,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _AccountSummaryCard(
+                            icon: Icons.people_outline,
+                            label: 'Total Accounts',
+                            value: '$totalAccounts',
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.check_circle_outline,
+                            label: 'Active',
+                            value: '${activeList.length}',
+                            valueColor: Colors.green,
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.pending_actions_outlined,
+                            label: 'Pending',
+                            value: '${pendingList.length}',
+                            valueColor: Colors.orange,
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.block_outlined,
+                            label: 'Suspended',
+                            value: '${suspendedList.length}',
+                            valueColor: Colors.redAccent,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: theme.cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.dividerColor.withValues(alpha: 0.14),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.local_shipping_outlined,
+                                color: Colors.orange),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Delivery account operations center: monitor active riders, review pending approvals, and quickly identify suspended accounts.',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      PopupMenuItem(
-                        value: 'toggle_suspend',
-                        child: Text(
-                          account.isSuspended ? 'Unsuspend' : 'Suspend',
-                        ),
-                      ),
-                      const PopupMenuDivider(),
-                      const PopupMenuItem(
-                        value: 'remove',
-                        child: Text('Remove Account'),
-                      ),
+                      const SizedBox(height: 18),
+                      if (_deliveryAccounts.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No delivery partner accounts found.',
+                              style: theme.textTheme.bodyLarge
+                                  ?.copyWith(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        if (pendingList.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Pending Approval',
+                            count: pendingList.length,
+                            icon: Icons.pending_actions_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          ...pendingList.map((account) =>
+                              _buildDeliveryCard(context, account)),
+                          const SizedBox(height: 16),
+                        ],
+                        if (activeList.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Active Partners',
+                            count: activeList.length,
+                            icon: Icons.check_circle_outline,
+                          ),
+                          const SizedBox(height: 10),
+                          ...activeList.map((account) =>
+                              _buildDeliveryCard(context, account)),
+                          const SizedBox(height: 16),
+                        ],
+                        if (suspendedList.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Suspended Partners',
+                            count: suspendedList.length,
+                            icon: Icons.block_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          ...suspendedList.map((account) =>
+                              _buildDeliveryCard(context, account)),
+                        ],
+                      ],
                     ],
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        statusLabel,
-                        style: TextStyle(
-                          color: statusColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
                   ),
                 ),
-              );
-            }),
-        ],
-      ),
-    );
-  }
-}
-
-class _DeliveryPartnerAccount {
-  final String name;
-  final String email;
-  final double rating;
-  final int deliveries;
-  final bool isActive;
-  final bool isSuspended;
-
-  const _DeliveryPartnerAccount({
-    required this.name,
-    required this.email,
-    required this.rating,
-    required this.deliveries,
-    required this.isActive,
-    required this.isSuspended,
-  });
-
-  _DeliveryPartnerAccount copyWith({
-    String? name,
-    String? email,
-    double? rating,
-    int? deliveries,
-    bool? isActive,
-    bool? isSuspended,
-  }) {
-    return _DeliveryPartnerAccount(
-      name: name ?? this.name,
-      email: email ?? this.email,
-      rating: rating ?? this.rating,
-      deliveries: deliveries ?? this.deliveries,
-      isActive: isActive ?? this.isActive,
-      isSuspended: isSuspended ?? this.isSuspended,
     );
   }
 }
@@ -806,19 +1960,32 @@ class _AccountSummaryCard extends StatelessWidget {
     return SizedBox(
       width: 250,
       child: Card(
+        elevation: 2,
+        shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: theme.dividerColor.withValues(alpha: 0.14),
+          ),
+        ),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(15),
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(11),
                 decoration: BoxDecoration(
-                  color: Colors.orange.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFFFFB347), Color(0xFFFF8A00)],
+                  ),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(icon, color: Colors.orange),
+                child: Icon(icon, color: Colors.white),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -833,7 +2000,8 @@ class _AccountSummaryCard extends StatelessWidget {
                     Text(
                       label,
                       style: theme.textTheme.bodyMedium?.copyWith(
-                        color: Colors.grey[600],
+                        color: theme.hintColor,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
@@ -885,118 +2053,560 @@ Widget _adminBottomNav(BuildContext context, String currentRoute) {
 }
 
 /// Coupon Management Screen
-class CouponManagementScreen extends StatelessWidget {
-  const CouponManagementScreen({Key? key}) : super(key: key);
+class CouponManagementScreen extends ConsumerStatefulWidget {
+  const CouponManagementScreen({super.key});
+
+  @override
+  ConsumerState<CouponManagementScreen> createState() =>
+      _CouponManagementScreenState();
+}
+
+class _CouponManagementScreenState
+    extends ConsumerState<CouponManagementScreen> {
+  List<Map<String, dynamic>> _coupons = [];
+  bool _isLoading = false;
+  String? _error;
+  String? _updatingCouponId;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadOffers());
+  }
+
+  Future<void> _loadOffers() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      setState(() {
+        _error = 'Please log in as admin to manage coupons.';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      final offers = await ApiClient().getAdminCoupons(token: token);
+      if (!mounted) return;
+      setState(() => _coupons = offers);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _setCouponStatus({
+    required String couponId,
+    required bool isActive,
+  }) async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) return;
+
+    setState(() => _updatingCouponId = couponId);
+    try {
+      final result = await ApiClient().setAdminCouponStatus(
+        token: token,
+        couponId: couponId,
+        isActive: isActive,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result['message']?.toString() ??
+                (isActive
+                    ? 'Coupon reopened successfully'
+                    : 'Coupon manually closed successfully'),
+          ),
+        ),
+      );
+
+      await _loadOffers();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('Exception: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _updatingCouponId = null);
+    }
+  }
+
+  String _stateOf(Map<String, dynamic> coupon) {
+    final state = coupon['adminState']?.toString();
+    if (state != null && state.isNotEmpty) return state;
+    final validity = coupon['validity'] is Map
+        ? Map<String, dynamic>.from(coupon['validity'] as Map)
+        : <String, dynamic>{};
+    return validity['isActive'] == true ? 'active' : 'manual_closed';
+  }
+
+  String _stateLabel(String state) {
+    switch (state) {
+      case 'auto_closed_timer':
+        return 'Auto Closed (Timer)';
+      case 'auto_closed_usage':
+        return 'Auto Closed (Usage)';
+      case 'manual_closed':
+        return 'Manually Closed';
+      case 'scheduled':
+        return 'Scheduled';
+      default:
+        return 'Active';
+    }
+  }
+
+  Color _stateColor(String state) {
+    switch (state) {
+      case 'auto_closed_timer':
+      case 'auto_closed_usage':
+        return Colors.blueGrey;
+      case 'manual_closed':
+        return Colors.redAccent;
+      case 'scheduled':
+        return Colors.orange;
+      default:
+        return Colors.green;
+    }
+  }
+
+  String _fmtDate(dynamic value) {
+    final parsed = value == null ? null : DateTime.tryParse(value.toString());
+    if (parsed == null) return '-';
+    final day = parsed.day.toString().padLeft(2, '0');
+    final month = parsed.month.toString().padLeft(2, '0');
+    final year = parsed.year.toString();
+    return '$day/$month/$year';
+  }
+
+  String _countdownText(dynamic untilValue) {
+    if (untilValue == null) return 'No expiry';
+    final until = DateTime.tryParse(untilValue.toString());
+    if (until == null) return 'No expiry';
+    final now = DateTime.now();
+    final diff = until.difference(now);
+    if (diff.isNegative) return 'Expired';
+
+    final days = diff.inDays;
+    if (days > 0) return '$days day${days == 1 ? '' : 's'} left';
+
+    final hours = diff.inHours;
+    if (hours > 0) return '$hours hour${hours == 1 ? '' : 's'} left';
+
+    final mins = diff.inMinutes;
+    return '$mins min${mins == 1 ? '' : 's'} left';
+  }
+
+  Widget _buildSectionTitle(
+    BuildContext context, {
+    required String title,
+    required int count,
+    IconData? icon,
+  }) {
+    final theme = Theme.of(context);
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 20, color: theme.primaryColor),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            title,
+            style: theme.textTheme.titleLarge
+                ?.copyWith(fontWeight: FontWeight.w700),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: theme.primaryColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Text(
+            '$count',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.primaryColor,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCouponCard(BuildContext context, Map<String, dynamic> coupon) {
+    final theme = Theme.of(context);
+    final state = _stateOf(coupon);
+    final color = _stateColor(state);
+    final code = coupon['code']?.toString() ?? '-';
+    final discount = coupon['discountDisplay']?.toString() ??
+        coupon['discountType']?.toString() ??
+        '-';
+    final usage = coupon['usage'] is Map<String, dynamic>
+        ? coupon['usage'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final used = usage['current']?.toString() ?? '0';
+    final total = usage['total']?.toString() ?? 'Unlimited';
+    final validity = coupon['validity'] is Map<String, dynamic>
+        ? coupon['validity'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final closeReason = coupon['closeReason']?.toString() ?? _stateLabel(state);
+    final couponId = coupon['id']?.toString() ?? '';
+    final isUpdating = _updatingCouponId == couponId;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 2,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(
+          color: theme.dividerColor.withValues(alpha: 0.14),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            height: 3,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.95),
+                  color.withValues(alpha: 0.55),
+                ],
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        code,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(999),
+                        border:
+                            Border.all(color: color.withValues(alpha: 0.25)),
+                      ),
+                      child: Text(
+                        _stateLabel(state),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text('Discount: $discount', style: theme.textTheme.bodyMedium),
+                const SizedBox(height: 4),
+                Text(
+                  'Usage: $used / $total',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.hintColor),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Validity: ${_fmtDate(validity['from'])} → ${_fmtDate(validity['until'])}',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: theme.hintColor),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        closeReason,
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    if (state == 'active')
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          _countdownText(validity['until']),
+                          style: const TextStyle(
+                            color: Colors.green,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                if (couponId.isNotEmpty)
+                  Row(
+                    children: [
+                      if (state == 'active' || state == 'scheduled')
+                        OutlinedButton.icon(
+                          onPressed: isUpdating
+                              ? null
+                              : () => _setCouponStatus(
+                                    couponId: couponId,
+                                    isActive: false,
+                                  ),
+                          icon: const Icon(Icons.pause_circle_outline),
+                          label: const Text('Close Manually'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                          ),
+                        )
+                      else if (state == 'manual_closed')
+                        FilledButton.icon(
+                          onPressed: isUpdating
+                              ? null
+                              : () => _setCouponStatus(
+                                    couponId: couponId,
+                                    isActive: true,
+                                  ),
+                          icon: const Icon(Icons.play_arrow_rounded),
+                          label: const Text('Reopen Coupon'),
+                        )
+                      else
+                        Text(
+                          'Auto-closed coupon cannot be reopened directly.',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.hintColor),
+                        ),
+                      if (isUpdating) ...[
+                        const SizedBox(width: 12),
+                        const SizedBox(
+                          height: 16,
+                          width: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ],
+                    ],
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
-    final coupons = [
-      {'code': 'SAVE20', 'discount': '20%', 'used': '342', 'status': 'Active'},
-      {
-        'code': 'WELCOME10',
-        'discount': '10%',
-        'used': '1,280',
-        'status': 'Active'
-      },
-      {
-        'code': 'SUMMER30',
-        'discount': '30%',
-        'used': '156',
-        'status': 'Inactive'
-      },
-      {
-        'code': 'FREEDELIV',
-        'discount': 'Free Delivery',
-        'used': '89',
-        'status': 'Active'
-      },
-    ];
+    final activeCoupons =
+        _coupons.where((c) => _stateOf(c) == 'active').toList();
+    final scheduledCoupons =
+        _coupons.where((c) => _stateOf(c) == 'scheduled').toList();
+    final autoClosedCoupons = _coupons
+        .where((c) =>
+            _stateOf(c) == 'auto_closed_timer' ||
+            _stateOf(c) == 'auto_closed_usage')
+        .toList();
+    final manualClosedCoupons =
+        _coupons.where((c) => _stateOf(c) == 'manual_closed').toList();
 
     return _AdminPageScaffold(
       currentRoute: '/admin/coupons',
       title: 'Coupon Management',
-      body: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: coupons.length,
-        itemBuilder: (context, index) {
-          final coupon = coupons[index];
-          final isActive = coupon['status'] == 'Active';
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Failed to load coupons',
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(_error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton.icon(
+                          onPressed: _loadOffers,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Retry'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadOffers,
+                  child: ListView(
+                    padding: const EdgeInsets.all(16),
                     children: [
-                      Text(
-                        coupon['code']!,
-                        style: theme.textTheme.titleSmall
-                            ?.copyWith(fontWeight: FontWeight.bold),
+                      Wrap(
+                        spacing: 12,
+                        runSpacing: 12,
+                        children: [
+                          _AccountSummaryCard(
+                            icon: Icons.confirmation_num_outlined,
+                            label: 'Total Coupons',
+                            value: '${_coupons.length}',
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.check_circle_outline,
+                            label: 'Active',
+                            value: '${activeCoupons.length}',
+                            valueColor: Colors.green,
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.schedule,
+                            label: 'Auto Closed',
+                            value: '${autoClosedCoupons.length}',
+                            valueColor: Colors.blueGrey,
+                          ),
+                          _AccountSummaryCard(
+                            icon: Icons.cancel_outlined,
+                            label: 'Manually Closed',
+                            value: '${manualClosedCoupons.length}',
+                            valueColor: Colors.redAccent,
+                          ),
+                        ],
                       ),
+                      const SizedBox(height: 18),
                       Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
+                        padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: isActive
-                              ? Colors.green.withOpacity(0.1)
-                              : Colors.grey.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          coupon['status']!,
-                          style: TextStyle(
-                            color: isActive ? Colors.green : Colors.grey,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
+                          color: theme.cardColor,
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(
+                            color: theme.dividerColor.withValues(alpha: 0.14),
                           ),
                         ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(Icons.auto_awesome_outlined,
+                                color: Colors.orange),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Coupon command center: distinguish active campaigns, auto-closed coupons (timer/usage), and manually closed coupons at a glance.',
+                                style: theme.textTheme.bodyMedium,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
+                      const SizedBox(height: 18),
+                      if (_coupons.isEmpty)
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No coupons found.',
+                              style: theme.textTheme.bodyLarge
+                                  ?.copyWith(color: Colors.grey),
+                            ),
+                          ),
+                        )
+                      else ...[
+                        if (activeCoupons.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Active Coupons',
+                            count: activeCoupons.length,
+                            icon: Icons.check_circle_outline,
+                          ),
+                          const SizedBox(height: 10),
+                          ...activeCoupons.map(
+                              (coupon) => _buildCouponCard(context, coupon)),
+                          const SizedBox(height: 16),
+                        ],
+                        if (scheduledCoupons.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Scheduled Coupons',
+                            count: scheduledCoupons.length,
+                            icon: Icons.schedule,
+                          ),
+                          const SizedBox(height: 10),
+                          ...scheduledCoupons.map(
+                              (coupon) => _buildCouponCard(context, coupon)),
+                          const SizedBox(height: 16),
+                        ],
+                        if (autoClosedCoupons.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Auto Closed Coupons',
+                            count: autoClosedCoupons.length,
+                            icon: Icons.timer_off_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          ...autoClosedCoupons.map(
+                              (coupon) => _buildCouponCard(context, coupon)),
+                          const SizedBox(height: 16),
+                        ],
+                        if (manualClosedCoupons.isNotEmpty) ...[
+                          _buildSectionTitle(
+                            context,
+                            title: 'Manually Closed Coupons',
+                            count: manualClosedCoupons.length,
+                            icon: Icons.gpp_bad_outlined,
+                          ),
+                          const SizedBox(height: 10),
+                          ...manualClosedCoupons.map(
+                              (coupon) => _buildCouponCard(context, coupon)),
+                        ],
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Discount: ${coupon['discount']!}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Used: ${coupon['used']!} times',
-                    style: theme.textTheme.bodySmall
-                        ?.copyWith(color: theme.hintColor),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () {},
-                        child: const Text('Edit'),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: () {},
-                        child: const Text('Delete'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      ),
+                ),
       floatingActionButton: FloatingActionButton(
-        onPressed: () {},
+        onPressed: _loadOffers,
         heroTag: 'admin-coupons-fab',
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.refresh),
       ),
     );
   }
@@ -1004,7 +2614,7 @@ class CouponManagementScreen extends StatelessWidget {
 
 /// Admin Settings Screen
 class AdminSettingsScreen extends StatefulWidget {
-  const AdminSettingsScreen({Key? key}) : super(key: key);
+  const AdminSettingsScreen({super.key});
 
   @override
   State<AdminSettingsScreen> createState() => _AdminSettingsScreenState();

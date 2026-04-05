@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter/services.dart';
+import '../../../../config/routes/app_routes.dart';
 import '../../data/models/auth_model.dart';
 import '../../data/models/user_role.dart';
 import '../providers/auth_provider.dart';
@@ -297,7 +298,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 alignment: Alignment.centerRight,
                 child: TextButton(
                   onPressed: () {
-                    // Handle forgot password
+                    context.push(AppRoutes.forgotPassword);
                   },
                   child: Text(
                     'Forgot password',

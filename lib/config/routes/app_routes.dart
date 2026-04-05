@@ -16,6 +16,8 @@ import '../../features/admin_panel/presentation/pages/restaurant_panel_screens.d
 import '../../features/admin_panel/presentation/pages/delivery_partner_screens.dart';
 // Authentication Screens
 import '../../features/authentication/presentation/pages/login_screen.dart';
+import '../../features/authentication/presentation/pages/forgot_password_screen.dart';
+import '../../features/authentication/presentation/pages/reset_password_screen.dart';
 import '../../features/authentication/presentation/pages/signup_screen.dart';
 import '../../features/authentication/presentation/providers/auth_provider.dart';
 import '../../features/authentication/data/models/user_role.dart';
@@ -27,6 +29,8 @@ final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 class AppRoutes {
   static const String home = '/';
   static const String login = '/login';
+  static const String forgotPassword = '/forgot-password';
+  static const String resetPassword = '/reset-password';
   static const String signup = '/signup';
   static const String browse = '/browse';
   static const String restaurantDetail = '/restaurant/:id';
@@ -62,7 +66,8 @@ class AppRoutes {
       final role = authState.user?.role ?? UserRole.guest;
       final location = state.uri.path;
 
-      final isAuthPage = location == login || location == signup;
+      final isAuthPage =
+          location == login || location == signup || location == forgotPassword;
       final isAdminRoute = location.startsWith('/admin');
       final isDashboardRoute = location.startsWith('/dashboard');
       final isDeliveryPartnerRoute =
@@ -145,6 +150,19 @@ class AppRoutes {
         path: login,
         builder: (context, state) => const LoginScreen(),
         name: 'login',
+      ),
+      GoRoute(
+        path: forgotPassword,
+        builder: (context, state) => const ForgotPasswordScreen(),
+        name: 'forgot-password',
+      ),
+      GoRoute(
+        path: resetPassword,
+        builder: (context, state) => ResetPasswordScreen(
+          initialEmail: state.uri.queryParameters['email'],
+          initialToken: state.uri.queryParameters['token'],
+        ),
+        name: 'reset-password',
       ),
       GoRoute(
         path: signup,

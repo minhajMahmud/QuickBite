@@ -525,4 +525,192 @@ class ApiClient {
 
     return data;
   }
+
+  Future<List<Map<String, dynamic>>> getCatalogRestaurants() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/catalog/restaurants'),
+      headers: {
+        'Accept': 'application/json',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch restaurants');
+    }
+
+    final raw = data['restaurants'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminRestaurants({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/admin/restaurants'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch admin restaurants');
+    }
+
+    final raw = data['restaurants'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> setAdminRestaurantApproval({
+    required String token,
+    required String restaurantId,
+    required bool approved,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/admin/restaurants/$restaurantId/approval'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'approved': approved}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(
+          data['message'] ?? 'Failed to update restaurant approval');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> setAdminRestaurantRestriction({
+    required String token,
+    required String restaurantId,
+    required bool restricted,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/admin/restaurants/$restaurantId/restriction'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'restricted': restricted}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(
+          data['message'] ?? 'Failed to update restaurant restriction');
+    }
+
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> getOffers() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/offers'),
+      headers: {
+        'Accept': 'application/json',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch offers');
+    }
+
+    final raw = data['offers'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getAdminCoupons({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/offers/admin/all'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch admin coupons');
+    }
+
+    final raw = data['coupons'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> setAdminCouponStatus({
+    required String token,
+    required String couponId,
+    required bool isActive,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/offers/admin/$couponId/status'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'isActive': isActive}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update coupon status');
+    }
+
+    return data;
+  }
 }

@@ -127,6 +127,27 @@ final userStatsProvider = FutureProvider<dashboard.UserStats>((ref) async {
   return service.getUserStats();
 });
 
+class UserOverviewData {
+  final dashboard.UserStats stats;
+  final List<Restaurant> favoriteRestaurants;
+
+  const UserOverviewData({
+    required this.stats,
+    required this.favoriteRestaurants,
+  });
+}
+
+/// User Overview Provider - combines live dashboard stats and favorite restaurants
+final userOverviewDataProvider = FutureProvider<UserOverviewData>((ref) async {
+  final stats = await ref.watch(userStatsProvider.future);
+  final restaurants = await ref.watch(restaurantsProvider.future);
+
+  return UserOverviewData(
+    stats: stats,
+    favoriteRestaurants: restaurants.take(3).toList(),
+  );
+});
+
 /// Recent Orders Provider - Get user's recent orders
 final recentOrdersProvider = FutureProvider<List<dashboard.Order>>((ref) async {
   final service = ref.watch(dashboardApiServiceProvider);

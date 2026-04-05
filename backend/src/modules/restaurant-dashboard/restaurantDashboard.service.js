@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const repository = require('./restaurantDashboard.repository');
+const usersStore = require('../users/users.store');
 
 const VALID_ORDER_STATUSES = new Set([
   'pending',
@@ -38,6 +39,22 @@ async function assertRestaurantAccess({ user, restaurantId }) {
 
   if (user.role === 'restaurant' && restaurant.owner_id && restaurant.owner_id !== user.sub) {
     throw new ApiError(403, 'You can only access your own restaurant dashboard');
+  }
+
+  if (user.role === 'restaurant') {
+    const owner = await usersStore.findUserById(user.sub);
+
+    if (!owner) {
+      throw new ApiError(403, 'Restaurant account not found');
+    }
+
+    if (owner.status === 'banned' || owner.status === 'inactive') {
+      throw new ApiError(403, 'This restaurant account is restricted');
+    }
+
+    if (owner.approved === false || restaurant.is_approved === false) {
+      throw new ApiError(403, 'This restaurant is awaiting approval');
+    }
   }
 
   return restaurant;

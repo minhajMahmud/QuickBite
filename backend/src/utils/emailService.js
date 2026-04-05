@@ -68,7 +68,7 @@ async function sendVerificationEmail(email, name, verificationToken, verificatio
  */
 async function sendPasswordResetEmail(email, name, resetToken, resetUrl) {
   try {
-    const resetLink = `${resetUrl}?token=${resetToken}`;
+    const resetLink = `${resetUrl}?email=${encodeURIComponent(email)}&token=${resetToken}`;
     
     const result = await resend.emails.send({
       from: `${env.resend.fromName} <${env.resend.fromEmail}>`,
