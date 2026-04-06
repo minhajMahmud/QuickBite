@@ -15,6 +15,14 @@ router.get(
 	controller.getAllCouponsForAdmin
 );
 
+// Create new coupon (admin only)
+router.post(
+	'/admin/create',
+	requireAuth,
+	requireRole('admin'),
+	controller.createCoupon
+);
+
 router.patch(
 	'/admin/:id/status',
 	requireAuth,

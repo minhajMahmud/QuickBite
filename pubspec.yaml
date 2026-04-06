@@ -42,6 +42,11 @@ dependencies:
   equatable: ^2.0.0
   crypto: ^3.0.3
   
+  # PDF & File Export
+  pdf: ^3.10.0
+  printing: ^5.11.0
+  path_provider: ^2.1.0
+  
   # Charts
   fl_chart: ^0.63.0
   

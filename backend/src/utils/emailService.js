@@ -4,16 +4,14 @@ const env = require('../config/env');
 const resend = new Resend(env.resend.apiKey);
 
 /**
- * Send email verification link
+ * Send email verification code
  */
-async function sendVerificationEmail(email, name, verificationToken, verificationUrl) {
+async function sendVerificationEmail(email, name, verificationCode) {
   try {
-    const confirmLink = `${verificationUrl}?token=${verificationToken}`;
-    
     const result = await resend.emails.send({
       from: `${env.resend.fromName} <${env.resend.fromEmail}>`,
       to: email,
-      subject: 'Verify your QuickBite account',
+      subject: 'Your QuickBite verification code',
       html: `
         <!DOCTYPE html>
         <html>
@@ -24,7 +22,8 @@ async function sendVerificationEmail(email, name, verificationToken, verificatio
               .container { max-width: 600px; margin: 0 auto; padding: 20px; }
               .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 8px 8px 0 0; text-align: center; }
               .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 8px 8px; }
-              .button { background: #667eea; color: white; padding: 12px 30px; border-radius: 5px; text-decoration: none; display: inline-block; margin: 20px 0; }
+              .code-box { background: #667eea; color: white; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0; }
+              .code { font-size: 32px; font-weight: bold; letter-spacing: 5px; }
               .footer { text-align: center; margin-top: 20px; font-size: 12px; color: #666; }
               .expiry { color: #e74c3c; font-size: 14px; margin-top: 20px; }
             </style>
@@ -36,15 +35,12 @@ async function sendVerificationEmail(email, name, verificationToken, verificatio
               </div>
               <div class="content">
                 <p>Hi ${name},</p>
-                <p>Thank you for signing up for QuickBite! Please verify your email address to activate your account.</p>
-                <p style="text-align: center;">
-                  <a href="${confirmLink}" class="button">Verify Email Address</a>
-                </p>
-                <p>Or copy this link in your browser:</p>
-                <p style="word-break: break-all; background: #e8e8e8; padding: 10px; border-radius: 5px;">
-                  ${confirmLink}
-                </p>
-                <p class="expiry">⏰ This link expires in 24 hours</p>
+                <p>Thank you for signing up for QuickBite! Use the 6-digit code below to verify your email in the app.</p>
+                <div class="code-box">
+                  <div class="code">${verificationCode}</div>
+                </div>
+                <p style="text-align: center; color: #666;">Open the app, enter this code, and tap Verify Code.</p>
+                <p class="expiry">⏰ This 6-digit code expires in 24 hours</p>
                 <p>If you didn't create this account, please ignore this email.</p>
               </div>
               <div class="footer">

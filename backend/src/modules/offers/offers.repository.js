@@ -238,6 +238,76 @@ async function setCouponIsActive(id, isActive) {
 }
 
 /**
+ * Create a new coupon
+ */
+async function createCoupon(couponData, createdBy) {
+  console.log('📝 [OFFERS_REPO] Creating new coupon...');
+  
+  const { code, description, discountType, discountValue, maxDiscount, minOrderValue, maxUsage, usagePerUser, validFrom, validUntil } = couponData;
+  
+  const couponId = require('crypto').randomUUID();
+  const query = `
+    INSERT INTO public.coupons (
+      id,
+      code,
+      description,
+      discount_type,
+      discount_value,
+      max_discount,
+      min_order_value,
+      max_usage,
+      current_usage,
+      usage_per_user,
+      valid_from,
+      valid_until,
+      is_active,
+      created_by,
+      created_at,
+      updated_at
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, $9, $10, $11, TRUE, $12, NOW(), NOW())
+    RETURNING
+      id,
+      code,
+      description,
+      discount_type,
+      discount_value,
+      COALESCE(max_discount, 0) as max_discount,
+      min_order_value,
+      max_usage,
+      current_usage,
+      usage_per_user,
+      valid_from,
+      valid_until,
+      is_active,
+      created_at,
+      updated_at;
+  `;
+
+  try {
+    const { rows } = await pool.query(query, [
+      couponId,
+      code.toUpperCase(),
+      description || null,
+      discountType || 'fixed',
+      discountValue,
+      maxDiscount || null,
+      minOrderValue || 0,
+      maxUsage || -1,
+      usagePerUser || 1,
+      validFrom || null,
+      validUntil || null,
+      createdBy,
+    ]);
+    console.log(`✅ [OFFERS_REPO] Coupon created: ${couponId}`);
+    return rows[0];
+  } catch (error) {
+    console.error('❌ [OFFERS_REPO] Failed to create coupon:', error.message);
+    throw error;
+  }
+}
+
+/**
  * Check user usage of a coupon
  */
 async function getUserCouponUsage(userId, couponId) {
@@ -305,6 +375,7 @@ module.exports = {
   getOfferById,
   getCouponByIdAny,
   setCouponIsActive,
+  createCoupon,
   getUserCouponUsage,
   recordCouponUsage,
 };

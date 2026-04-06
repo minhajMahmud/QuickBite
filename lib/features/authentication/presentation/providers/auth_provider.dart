@@ -153,6 +153,52 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
+  /// Verify email with 6-digit code
+  Future<String> verifyEmail(String email, String code) async {
+    _setState(state.copyWith(error: null, successMessage: null));
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.verifyEmail(email, code);
+      final message = (response['message']?.toString().isNotEmpty ?? false)
+          ? response['message'].toString()
+          : 'Email verified successfully!';
+
+      _setState(state.copyWith(
+        isAuthenticated: true,
+        user: state.user?.copyWith(emailVerified: true),
+        successMessage: message,
+        error: null,
+      ));
+      return message;
+    } catch (e) {
+      final errorMessage = e.toString().replaceAll('Exception: ', '');
+      _setState(state.copyWith(error: errorMessage));
+      rethrow;
+    }
+  }
+
+  /// Resend email verification code
+  Future<String> resendVerificationEmail(String email) async {
+    _setState(state.copyWith(error: null, successMessage: null));
+    try {
+      final apiClient = ApiClient();
+      final response = await apiClient.resendVerificationEmail(email);
+      final message = (response['message']?.toString().isNotEmpty ?? false)
+          ? response['message'].toString()
+          : 'Verification code sent successfully.';
+
+      _setState(state.copyWith(
+        successMessage: message,
+        error: null,
+      ));
+      return message;
+    } catch (e) {
+      final errorMessage = e.toString().replaceAll('Exception: ', '');
+      _setState(state.copyWith(error: errorMessage));
+      rethrow;
+    }
+  }
+
   /// Reset password with email + token
   Future<void> resetPassword({
     required String email,

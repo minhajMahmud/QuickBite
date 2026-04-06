@@ -55,6 +55,7 @@ class AppRoutes {
       '/admin/restaurant-panel/profile';
   static const String userManagement = '/admin/users';
   static const String restaurantManagement = '/admin/restaurants';
+  static const String adminAnalytics = '/admin/analytics';
 
   static final GoRouter router = GoRouter(
     navigatorKey: navigatorKey,
@@ -269,6 +270,11 @@ class AppRoutes {
             path: 'coupons',
             builder: (context, state) => const CouponManagementScreen(),
             name: 'coupon-management',
+          ),
+          GoRoute(
+            path: 'analytics',
+            builder: (context, state) => const AdminAnalyticsDashboard(),
+            name: 'admin-analytics',
           ),
           GoRoute(
             path: 'settings',

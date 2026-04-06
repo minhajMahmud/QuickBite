@@ -238,6 +238,88 @@ async function validateCoupon(code, orderAmount, userId = null) {
 }
 
 /**
+ * Create a new coupon (admin only)
+ */
+async function createCoupon(couponData, createdBy) {
+  console.log('🎁 [OFFERS_SERVICE] Creating new coupon...');
+  
+  const { code, description, discountType, discountValue, maxDiscount, minOrderValue, maxUsage, usagePerUser, validFrom, validUntil } = couponData;
+
+  // Validation
+  if (!code || code.trim() === '') {
+    throw new ApiError(400, 'Coupon code is required');
+  }
+
+  if (!discountValue || Number(discountValue) <= 0) {
+    throw new ApiError(400, 'Discount value must be greater than 0');
+  }
+
+  if (discountType === 'percentage' && Number(discountValue) > 100) {
+    throw new ApiError(400, 'Percentage discount cannot exceed 100%');
+  }
+
+  if (maxDiscount && Number(maxDiscount) < 0) {
+    throw new ApiError(400, 'Max discount cannot be negative');
+  }
+
+  if (minOrderValue && Number(minOrderValue) < 0) {
+    throw new ApiError(400, 'Minimum order value cannot be negative');
+  }
+
+  const validFromDate = validFrom ? new Date(validFrom) : null;
+  const validUntilDate = validUntil ? new Date(validUntil) : null;
+
+  if (validFromDate && Number.isNaN(validFromDate.getTime())) {
+    throw new ApiError(400, 'Valid from date is invalid');
+  }
+
+  if (validUntilDate && Number.isNaN(validUntilDate.getTime())) {
+    throw new ApiError(400, 'Valid until date is invalid');
+  }
+
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+
+  if (validFromDate && validFromDate < startOfToday) {
+    throw new ApiError(400, 'Valid from date cannot be in the past');
+  }
+
+  if (validUntilDate && validUntilDate < startOfToday) {
+    throw new ApiError(400, 'Valid until date cannot be in the past');
+  }
+
+  if (validFromDate && validUntilDate && validFromDate > validUntilDate) {
+    throw new ApiError(400, 'Valid from date must be before valid until date');
+  }
+
+  const coupon = await repository.createCoupon(
+    {
+      code,
+      description,
+      discountType,
+      discountValue,
+      maxDiscount,
+      minOrderValue,
+      maxUsage,
+      usagePerUser,
+      validFrom,
+      validUntil,
+    },
+    createdBy
+  );
+
+  if (!coupon) {
+    throw new ApiError(500, 'Failed to create coupon');
+  }
+
+  console.log(`✅ [OFFERS_SERVICE] Coupon created successfully: ${coupon.id}`);
+  return {
+    coupon: toAdminCouponModel(coupon),
+    message: 'Coupon created successfully',
+  };
+}
+
+/**
  * Apply coupon to order (record usage)
  */
 async function applyCoupon(couponCode, userId, orderAmount) {
@@ -258,6 +340,7 @@ module.exports = {
   getAllOffers,
   getAllCouponsForAdmin,
   setCouponActiveState,
+  createCoupon,
   getOfferById,
   validateCoupon,
   applyCoupon,

@@ -114,6 +114,48 @@ async function validateCoupon(req, res, next) {
 }
 
 /**
+ * POST /api/v1/offers/admin/create
+ * Create a new coupon (admin only)
+ * Body: { code, description, discountType, discountValue, maxDiscount, minOrderValue, maxUsage, usagePerUser, validFrom, validUntil }
+ */
+async function createCoupon(req, res, next) {
+  try {
+    const { code, description, discountType, discountValue, maxDiscount, minOrderValue, maxUsage, usagePerUser, validFrom, validUntil } = req.body;
+    
+    console.log(`🎁 [OFFERS_CONTROLLER] POST /offers/admin/create: code=${code}`);
+
+    if (!code || !discountValue) {
+      throw new ApiError(400, 'Missing required fields: code, discountValue');
+    }
+
+    const createdBy = req.user?.id || null;
+    const result = await service.createCoupon(
+      {
+        code,
+        description,
+        discountType,
+        discountValue,
+        maxDiscount,
+        minOrderValue,
+        maxUsage,
+        usagePerUser,
+        validFrom,
+        validUntil,
+      },
+      createdBy
+    );
+
+    res.status(201).json({
+      success: true,
+      message: result.message,
+      coupon: result.coupon,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
  * POST /api/v1/offers/apply
  * Apply coupon code to order
  * Body: { code, orderAmount, userId? }
@@ -148,6 +190,7 @@ module.exports = {
   getAllOffers,
   getAllCouponsForAdmin,
   setCouponStatus,
+  createCoupon,
   getOfferById,
   validateCoupon,
   applyCoupon,

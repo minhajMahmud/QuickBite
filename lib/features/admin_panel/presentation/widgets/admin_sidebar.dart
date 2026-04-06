@@ -169,7 +169,7 @@ class AdminSidebar extends ConsumerWidget {
                         route: '/admin/analytics',
                         currentRoute: currentRoute,
                         collapsed: collapsed,
-                        onTap: () {},
+                        onTap: () => context.go('/admin/analytics'),
                       ),
                       _NavItem(
                         icon: Icons.settings,

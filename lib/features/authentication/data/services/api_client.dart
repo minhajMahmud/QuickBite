@@ -89,8 +89,8 @@ class ApiClient {
     }
   }
 
-  /// Verify email
-  Future<Map<String, dynamic>> verifyEmail(String email, String token) async {
+  /// Verify email with 6-digit code
+  Future<Map<String, dynamic>> verifyEmail(String email, String code) async {
     try {
       final response = await http
           .post(
@@ -101,7 +101,7 @@ class ApiClient {
             },
             body: jsonEncode({
               'email': email.trim().toLowerCase(),
-              'token': token,
+              'code': code.trim(),
             }),
           )
           .timeout(
@@ -115,6 +115,37 @@ class ApiClient {
       } else {
         throw Exception('Email verification failed');
       }
+    } catch (e) {
+      rethrow;
+    }
+  }
+
+  /// Resend email verification link
+  Future<Map<String, dynamic>> resendVerificationEmail(String email) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/auth/resend-verification'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: jsonEncode({
+              'email': email.trim().toLowerCase(),
+            }),
+          )
+          .timeout(
+            const Duration(seconds: 30),
+            onTimeout: () => throw Exception('Request timeout'),
+          );
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+
+      final error = jsonDecode(response.body) as Map<String, dynamic>;
+      throw Exception(
+          error['message'] ?? 'Failed to resend verification email');
     } catch (e) {
       rethrow;
     }
@@ -709,6 +740,56 @@ class ApiClient {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to update coupon status');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> createAdminCoupon({
+    required String token,
+    required String code,
+    String? description,
+    String? discountType,
+    required double discountValue,
+    double? maxDiscount,
+    double? minOrderValue,
+    int? maxUsage,
+    int? usagePerUser,
+    String? validFrom,
+    String? validUntil,
+  }) async {
+    final body = <String, dynamic>{
+      'code': code,
+      'discountValue': discountValue,
+    };
+
+    if (description != null) body['description'] = description;
+    if (discountType != null) body['discountType'] = discountType;
+    if (maxDiscount != null) body['maxDiscount'] = maxDiscount;
+    if (minOrderValue != null) body['minOrderValue'] = minOrderValue;
+    if (maxUsage != null) body['maxUsage'] = maxUsage;
+    if (usagePerUser != null) body['usagePerUser'] = usagePerUser;
+    if (validFrom != null) body['validFrom'] = validFrom;
+    if (validUntil != null) body['validUntil'] = validUntil;
+
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/offers/admin/create'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(body),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 201 && response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to create coupon');
     }
 
     return data;

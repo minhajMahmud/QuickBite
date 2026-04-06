@@ -19,6 +19,8 @@ const dbFieldMap = {
   emailVerified: 'email_verified',
   emailVerificationToken: 'email_verification_token',
   emailVerificationTokenExpiresAt: 'email_verification_token_expires_at',
+  emailVerificationCode: 'email_verification_code',
+  emailVerificationCodeExpiresAt: 'email_verification_code_expires_at',
   firstLogin: 'first_login',
   lastPasswordChange: 'last_password_change',
 };
@@ -47,6 +49,8 @@ function toUserModel(row) {
     emailVerified: row.email_verified,
     emailVerificationToken: row.email_verification_token,
     emailVerificationTokenExpiresAt: row.email_verification_token_expires_at,
+    emailVerificationCode: row.email_verification_code,
+    emailVerificationCodeExpiresAt: row.email_verification_code_expires_at,
     firstLogin: row.first_login,
     lastPasswordChange: row.last_password_change,
   };
@@ -81,12 +85,14 @@ async function createUser(user) {
     INSERT INTO users (
       id, name, email, password_hash, role, approved, avatar, phone, date_of_birth, gender, status,
       email_verified, email_verification_token, email_verification_token_expires_at,
+      email_verification_code, email_verification_code_expires_at,
       first_login, last_login, created_at, updated_at
     )
     VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
       $12, $13, $14,
-      $15, $16, COALESCE($17, NOW()), NOW()
+      $15, $16,
+      $17, $18, COALESCE($19, NOW()), NOW()
     )
     RETURNING *;
   `;
@@ -106,6 +112,8 @@ async function createUser(user) {
     user.emailVerified ?? false,
     user.emailVerificationToken || null,
     user.emailVerificationTokenExpiresAt || null,
+    user.emailVerificationCode || null,
+    user.emailVerificationCodeExpiresAt || null,
     user.firstLogin ?? true,
     user.lastLogin || null,
     user.createdAt || null,

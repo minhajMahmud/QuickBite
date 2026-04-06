@@ -1,4 +1,5 @@
 const authService = require('./auth.service');
+const env = require('../../config/env');
 
 async function register(req, res, next) {
   try {
@@ -20,8 +21,8 @@ async function login(req, res, next) {
 
 async function verifyEmail(req, res, next) {
   try {
-    const { email, token } = req.body;
-    const result = await authService.verifyEmail(email, token);
+    const { email, code } = req.body;
+    const result = await authService.verifyEmail(email, code);
     res.json(result);
   } catch (error) {
     next(error);

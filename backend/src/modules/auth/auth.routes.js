@@ -11,7 +11,7 @@ router.post('/register', validate(['name', 'email', 'password']), controller.reg
 router.post('/login', validate(['email', 'password']), controller.login);
 
 // Email verification
-router.post('/verify-email', validate(['email', 'token']), controller.verifyEmail);
+router.post('/verify-email', validate(['email', 'code']), controller.verifyEmail);
 
 // Resend verification email
 router.post('/resend-verification', validate(['email']), controller.resendVerificationEmail);

@@ -14,6 +14,13 @@ function generateSecureToken() {
 }
 
 /**
+ * Generate a 6-digit verification code
+ */
+function generateVerificationCode() {
+  return Math.floor(100000 + Math.random() * 900000).toString();
+}
+
+/**
  * Generate hash of a token (for storage)
  */
 function hashToken(token) {
@@ -46,9 +53,9 @@ async function register({ name, email, password, role = 'customer' }) {
   console.log('   Hashing password...');
   const passwordHash = await bcrypt.hash(password, 10);
 
-  // Generate email verification token
-  const emailVerificationToken = generateSecureToken();
-  const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  // Generate email verification code (6 digits)
+  const emailVerificationCode = generateVerificationCode();
+  const codeExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
   // Create user in database
   console.log('   📦 Calling usersStore.createUser()...');
@@ -60,8 +67,8 @@ async function register({ name, email, password, role = 'customer' }) {
     role,
     approved: role === 'customer', // Business accounts require admin approval
     emailVerified: false, // Not verified yet
-    emailVerificationToken,
-    emailVerificationTokenExpiresAt: tokenExpiry,
+    emailVerificationCode,
+    emailVerificationCodeExpiresAt: codeExpiry,
     firstLogin: true,
     createdAt: new Date().toISOString(),
   });
@@ -74,8 +81,7 @@ async function register({ name, email, password, role = 'customer' }) {
     await emailService.sendVerificationEmail(
       email,
       name,
-      emailVerificationToken,
-      env.frontend.emailVerificationUrl
+      emailVerificationCode
     );
 
     // Also send account confirmation email
@@ -106,9 +112,9 @@ async function register({ name, email, password, role = 'customer' }) {
 }
 
 /**
- * Verify email with token
+ * Verify email with code
  */
-async function verifyEmail(email, verificationToken) {
+async function verifyEmail(email, verificationCode) {
   const user = await usersStore.findUserByEmail(email);
   
   if (!user) {
@@ -119,20 +125,20 @@ async function verifyEmail(email, verificationToken) {
     throw new ApiError(400, 'Email already verified');
   }
 
-  // Check token validity
-  if (!user.emailVerificationToken || user.emailVerificationToken !== verificationToken) {
-    throw new ApiError(401, 'Invalid verification token');
+  // Check code validity
+  if (!user.emailVerificationCode || user.emailVerificationCode !== verificationCode.toString().trim()) {
+    throw new ApiError(401, 'Invalid verification code');
   }
 
-  if (new Date(user.emailVerificationTokenExpiresAt) < new Date()) {
-    throw new ApiError(401, 'Verification token has expired');
+  if (new Date(user.emailVerificationCodeExpiresAt) < new Date()) {
+    throw new ApiError(401, 'Verification code has expired');
   }
 
   // Update user as verified
   await usersStore.updateUser(user.id, {
     emailVerified: true,
-    emailVerificationToken: null,
-    emailVerificationTokenExpiresAt: null,
+    emailVerificationCode: null,
+    emailVerificationCodeExpiresAt: null,
   });
 
   return {
@@ -155,13 +161,13 @@ async function resendVerificationEmail(email) {
     throw new ApiError(400, 'Email already verified');
   }
 
-  // Generate new token
-  const emailVerificationToken = generateSecureToken();
-  const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  // Generate new 6-digit code
+  const emailVerificationCode = generateVerificationCode();
+  const codeExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
   await usersStore.updateUser(user.id, {
-    emailVerificationToken,
-    emailVerificationTokenExpiresAt: tokenExpiry,
+    emailVerificationCode,
+    emailVerificationCodeExpiresAt: codeExpiry,
   });
 
   // Send verification email
@@ -169,8 +175,7 @@ async function resendVerificationEmail(email) {
     await emailService.sendVerificationEmail(
       email,
       user.name,
-      emailVerificationToken,
-      env.frontend.emailVerificationUrl
+      emailVerificationCode
     );
   } catch (error) {
     console.error('Error sending verification email:', error);
@@ -179,7 +184,7 @@ async function resendVerificationEmail(email) {
 
   return {
     success: true,
-    message: 'Verification email sent successfully',
+    message: 'Verification code sent successfully',
   };
 }
 
