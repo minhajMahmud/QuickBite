@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/models.dart';
 import '../../config/theme/app_theme.dart';
+import 'adaptive_app_image.dart';
 
 /// Food Item Card Widget
 class FoodItemCard extends StatelessWidget {
@@ -22,17 +23,11 @@ class FoodItemCard extends StatelessWidget {
             // Food Image
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: Image.network(
-                foodItem.image,
+              child: AdaptiveAppImage(
+                source: foodItem.image,
                 width: 80,
                 height: 80,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  width: 80,
-                  height: 80,
-                  color: AppColors.secondaryLight,
-                  child: const Icon(Icons.image),
-                ),
               ),
             ),
             const SizedBox(width: 12),
@@ -76,6 +71,7 @@ class FoodItemCard extends StatelessWidget {
             const SizedBox(width: 12),
             // Add to Cart Button
             FloatingActionButton.small(
+              heroTag: null,
               onPressed: onAddToCart,
               backgroundColor: AppColors.primaryOrange,
               child: const Icon(Icons.add, color: Colors.white),

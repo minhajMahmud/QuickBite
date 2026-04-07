@@ -12,6 +12,18 @@ async function overview(req, res, next) {
   }
 }
 
+async function updateProfile(req, res, next) {
+  try {
+    const restaurant = await service.updateProfile({
+      user: req.user,
+      payload: req.body,
+    });
+    res.json({ restaurant });
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function listMenu(req, res, next) {
   try {
     const menu = await service.listMenu({
@@ -44,6 +56,19 @@ async function updateMenuItem(req, res, next) {
       payload: req.body,
     });
     res.json({ item });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function deleteMenuItem(req, res, next) {
+  try {
+    const deleted = await service.removeMenuItem({
+      user: req.user,
+      foodItemId: req.params.foodItemId,
+      payload: req.body || {},
+    });
+    res.json({ deleted });
   } catch (error) {
     next(error);
   }
@@ -94,9 +119,11 @@ async function analytics(req, res, next) {
 
 module.exports = {
   overview,
+  updateProfile,
   listMenu,
   createMenuItem,
   updateMenuItem,
+  deleteMenuItem,
   listOrders,
   updateOrderStatus,
   analytics,

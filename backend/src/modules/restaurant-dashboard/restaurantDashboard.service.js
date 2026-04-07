@@ -2,6 +2,8 @@ const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const repository = require('./restaurantDashboard.repository');
 const usersStore = require('../users/users.store');
+const path = require('path');
+const fs = require('fs/promises');
 
 const VALID_ORDER_STATUSES = new Set([
   'pending',
@@ -21,10 +23,28 @@ async function resolveRestaurantId({ user, restaurantId }) {
   }
 
   if (user.role === 'restaurant') {
-    const ownedRestaurantId = await repository.findRestaurantByOwnerId(user.sub);
+    let ownedRestaurantId = await repository.findRestaurantByOwnerId(user.sub);
+    if (!ownedRestaurantId) {
+      const owner = await usersStore.findUserById(user.sub);
+      if (!owner) {
+        throw new ApiError(400, 'Restaurant account not found');
+      }
+
+      ownedRestaurantId = await repository.createRestaurantForOwner({
+        ownerId: user.sub,
+        name: owner.name,
+        email: owner.email,
+      });
+
+      if (!ownedRestaurantId) {
+        ownedRestaurantId = await repository.findRestaurantByOwnerId(user.sub);
+      }
+    }
+
     if (!ownedRestaurantId) {
       throw new ApiError(400, 'Restaurant account has no linked restaurant record');
     }
+
     return ownedRestaurantId;
   }
 
@@ -52,12 +72,37 @@ async function assertRestaurantAccess({ user, restaurantId }) {
       throw new ApiError(403, 'This restaurant account is restricted');
     }
 
-    if (owner.approved === false || restaurant.is_approved === false) {
-      throw new ApiError(403, 'This restaurant is awaiting approval');
-    }
   }
 
   return restaurant;
+}
+
+async function persistImageFromDataUri(imageData, folderName = 'menu-items') {
+  if (!imageData || typeof imageData !== 'string') {
+    return null;
+  }
+
+  const match = imageData.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/i);
+  if (!match) {
+    throw new ApiError(400, 'Invalid image data format. Use data URL with png, jpeg, jpg, or webp.');
+  }
+
+  const ext = match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+  const base64Data = match[2];
+  const imageBuffer = Buffer.from(base64Data, 'base64');
+
+  if (!imageBuffer.length) {
+    throw new ApiError(400, 'Image payload is empty');
+  }
+
+  const uploadsDir = path.join(__dirname, '..', '..', '..', 'uploads', folderName);
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  const fileName = `${crypto.randomUUID()}.${ext}`;
+  const filePath = path.join(uploadsDir, fileName);
+
+  await fs.writeFile(filePath, imageBuffer);
+  return `/uploads/${folderName}/${fileName}`;
 }
 
 async function getOverview({ user, restaurantId }) {
@@ -74,6 +119,46 @@ async function getOverview({ user, restaurantId }) {
     metrics: overview,
     operatingHours,
   };
+}
+
+async function updateProfile({ user, payload }) {
+  const restaurantId = await resolveRestaurantId({
+    user,
+    restaurantId: payload.restaurantId,
+  });
+  await assertRestaurantAccess({ user, restaurantId });
+
+  const updates = {
+    name: payload.name,
+    description: payload.description,
+    image: payload.image,
+    cuisine: payload.cuisine,
+    phone: payload.phone,
+    email: payload.email,
+    streetAddress: payload.streetAddress || payload.address,
+    city: payload.city,
+    state: payload.state,
+    postalCode: payload.postalCode,
+  };
+
+  if (payload.imageData) {
+    updates.image = await persistImageFromDataUri(payload.imageData, 'restaurant-profile');
+  }
+
+  const cleanedUpdates = Object.fromEntries(
+    Object.entries(updates).filter(([, value]) => value !== undefined)
+  );
+
+  const updated = await repository.updateRestaurantProfile({
+    restaurantId,
+    updates: cleanedUpdates,
+  });
+
+  if (!updated) {
+    throw new ApiError(404, 'Restaurant not found');
+  }
+
+  return updated;
 }
 
 async function listMenu({ user, restaurantId }) {
@@ -104,6 +189,11 @@ async function addMenuItem({ user, payload }) {
     throw new ApiError(400, 'Invalid availability value');
   }
 
+  let image = payload.image || null;
+  if (payload.imageData) {
+    image = await persistImageFromDataUri(payload.imageData);
+  }
+
   return repository.createMenuItem({
     id: crypto.randomUUID(),
     restaurantId,
@@ -111,7 +201,7 @@ async function addMenuItem({ user, payload }) {
     name: payload.name,
     description: payload.description || null,
     price,
-    image: payload.image || null,
+    image,
     isPopular: Boolean(payload.isPopular),
     isVegetarian: Boolean(payload.isVegetarian),
     isVegan: Boolean(payload.isVegan),
@@ -123,6 +213,11 @@ async function addMenuItem({ user, payload }) {
 async function editMenuItem({ user, foodItemId, payload }) {
   const restaurantId = await resolveRestaurantId({ user, restaurantId: payload.restaurantId });
   await assertRestaurantAccess({ user, restaurantId });
+
+  if (payload.imageData) {
+    payload.image = await persistImageFromDataUri(payload.imageData);
+    delete payload.imageData;
+  }
 
   if (Object.prototype.hasOwnProperty.call(payload, 'availability')) {
     if (!VALID_AVAILABILITY.has(payload.availability)) {
@@ -149,6 +244,25 @@ async function editMenuItem({ user, foodItemId, payload }) {
   }
 
   return updated;
+}
+
+async function removeMenuItem({ user, foodItemId, payload }) {
+  const restaurantId = await resolveRestaurantId({
+    user,
+    restaurantId: payload?.restaurantId,
+  });
+  await assertRestaurantAccess({ user, restaurantId });
+
+  const deleted = await repository.deleteMenuItem({
+    restaurantId,
+    foodItemId,
+  });
+
+  if (!deleted) {
+    throw new ApiError(404, 'Menu item not found');
+  }
+
+  return true;
 }
 
 async function listOrders({ user, restaurantId, status, limit, offset }) {
@@ -211,9 +325,11 @@ async function getAnalytics({ user, restaurantId, days }) {
 
 module.exports = {
   getOverview,
+  updateProfile,
   listMenu,
   addMenuItem,
   editMenuItem,
+  removeMenuItem,
   listOrders,
   updateOrderStatus,
   getAnalytics,

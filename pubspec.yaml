@@ -52,6 +52,7 @@ dependencies:
   
   # Image Picking
   image_picker: ^1.0.0
+  image: ^4.2.0
   url_launcher: ^6.3.1
   
   # Maps (optional for delivery tracking)

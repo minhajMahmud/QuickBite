@@ -5,6 +5,7 @@ import '../../../../presentation/providers/app_providers.dart';
 import '../../../../data/models/models.dart';
 import '../../../../config/theme/app_theme.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
+import '../../../../presentation/widgets/adaptive_app_image.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 import '../widgets/offers_section.dart';
 
@@ -249,14 +250,10 @@ class HomeScreen extends ConsumerWidget {
                                     const SizedBox(height: 10),
                                     Align(
                                       alignment: Alignment.centerRight,
-                                      child: ClipRRect(
-                                        borderRadius: BorderRadius.circular(14),
-                                        child: Image.network(
-                                          'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&h=280&fit=crop',
-                                          width: imageWidth,
-                                          height: imageHeight,
-                                          fit: BoxFit.cover,
-                                        ),
+                                      child: SizedBox(
+                                        width: imageWidth,
+                                        height: imageHeight,
+                                        child: const _DecorativeFoodImage(),
                                       ),
                                     ),
                                   ],
@@ -289,14 +286,10 @@ class HomeScreen extends ConsumerWidget {
                                         ],
                                       ),
                                     ),
-                                    ClipRRect(
-                                      borderRadius: BorderRadius.circular(14),
-                                      child: Image.network(
-                                        'https://images.unsplash.com/photo-1513104890138-7c749659a591?w=400&h=280&fit=crop',
-                                        width: imageWidth,
-                                        height: imageHeight,
-                                        fit: BoxFit.cover,
-                                      ),
+                                    SizedBox(
+                                      width: imageWidth,
+                                      height: imageHeight,
+                                      child: const _DecorativeFoodImage(),
                                     ),
                                   ],
                                 ),
@@ -876,15 +869,13 @@ class _PromoDealCard extends StatelessWidget {
           Positioned(
             right: 0,
             bottom: 0,
-            child: ClipRRect(
-              borderRadius: const BorderRadius.only(
-                bottomRight: Radius.circular(16),
-              ),
-              child: Image.network(
-                imageUrl,
-                width: imageWidth,
-                height: imageHeight,
-                fit: BoxFit.cover,
+            child: SizedBox(
+              width: imageWidth,
+              height: imageHeight,
+              child: const _DecorativeFoodImage(
+                borderRadius: BorderRadius.only(
+                  bottomRight: Radius.circular(16),
+                ),
               ),
             ),
           ),
@@ -961,18 +952,11 @@ class _RestaurantFeedCard extends StatelessWidget {
               children: [
                 ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: Image.network(
-                    restaurant.image,
+                  child: AdaptiveAppImage(
+                    source: restaurant.image,
                     width: cardWidth,
                     height: imageHeight,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
-                      width: cardWidth,
-                      height: imageHeight,
-                      color: const Color(0xFFECECF0),
-                      alignment: Alignment.center,
-                      child: const Icon(Icons.image_not_supported_outlined),
-                    ),
                   ),
                 ),
                 Positioned(
@@ -1030,15 +1014,51 @@ class _RestaurantFeedCard extends StatelessWidget {
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  '${restaurant.deliveryFee} delivery',
-                  style: const TextStyle(color: AppColors.muted),
+                Expanded(
+                  child: Text(
+                    '${restaurant.deliveryFee} delivery',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.muted),
+                  ),
                 ),
               ],
             ),
           ],
         ),
       ),
+    );
+  }
+}
+
+class _DecorativeFoodImage extends StatelessWidget {
+  final BorderRadius? borderRadius;
+
+  const _DecorativeFoodImage({this.borderRadius});
+
+  @override
+  Widget build(BuildContext context) {
+    final image = Container(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFC58A), Color(0xFFFF8A5B)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        border: Border.all(color: Colors.white.withOpacity(0.25), width: 1),
+      ),
+    );
+
+    if (borderRadius == null) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: image,
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: borderRadius!,
+      child: image,
     );
   }
 }

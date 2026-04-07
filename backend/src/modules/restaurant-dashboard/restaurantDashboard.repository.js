@@ -1,4 +1,48 @@
 const { pool } = require('../../config/db');
+const crypto = require('crypto');
+
+async function createRestaurantForOwner({ ownerId, name, email }) {
+  const query = `
+    INSERT INTO restaurants (
+      id,
+      name,
+      description,
+      owner_id,
+      email,
+      status,
+      is_approved,
+      created_at,
+      updated_at
+    ) VALUES (
+      $1,
+      $2,
+      $3,
+      $4,
+      $5,
+      'closed',
+      FALSE,
+      CURRENT_TIMESTAMP,
+      CURRENT_TIMESTAMP
+    )
+    RETURNING id;
+  `;
+
+  const fallbackName = name && String(name).trim().length > 0
+    ? `${String(name).trim()}'s Restaurant`
+    : 'My Restaurant';
+
+  const id = crypto.randomUUID();
+
+  const { rows } = await pool.query(query, [
+    id,
+    fallbackName,
+    'New restaurant account. Update your profile details from the restaurant panel.',
+    ownerId,
+    email || null,
+  ]);
+
+  return rows[0]?.id || null;
+}
 
 async function findRestaurantById(restaurantId) {
   const query = `
@@ -77,6 +121,52 @@ async function listOperatingHours(restaurantId) {
 
   const { rows } = await pool.query(query, [restaurantId]);
   return rows;
+}
+
+async function updateRestaurantProfile({ restaurantId, updates }) {
+  const allowed = {
+    name: 'name',
+    description: 'description',
+    image: 'image',
+    cuisine: 'cuisine',
+    phone: 'phone',
+    email: 'email',
+    streetAddress: 'street_address',
+    city: 'city',
+    state: 'state',
+    postalCode: 'postal_code',
+  };
+
+  const setParts = [];
+  const values = [];
+  let idx = 1;
+
+  Object.keys(allowed).forEach((key) => {
+    if (Object.prototype.hasOwnProperty.call(updates, key)) {
+      setParts.push(`${allowed[key]} = $${idx}`);
+      values.push(updates[key]);
+      idx += 1;
+    }
+  });
+
+  if (setParts.length === 0) {
+    return findRestaurantById(restaurantId);
+  }
+
+  setParts.push('updated_at = CURRENT_TIMESTAMP');
+
+  const query = `
+    UPDATE restaurants
+    SET ${setParts.join(', ')}
+    WHERE id = $${idx}
+      AND deleted_at IS NULL
+    RETURNING *;
+  `;
+
+  values.push(restaurantId);
+
+  const { rows } = await pool.query(query, values);
+  return rows[0] || null;
 }
 
 async function listMenuItems(restaurantId) {
@@ -198,6 +288,21 @@ async function updateMenuItem({ restaurantId, foodItemId, updates }) {
 
   const { rows } = await pool.query(query, values);
   return rows[0] || null;
+}
+
+async function deleteMenuItem({ restaurantId, foodItemId }) {
+  const query = `
+    UPDATE food_items
+    SET deleted_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+      AND restaurant_id = $2
+      AND deleted_at IS NULL
+    RETURNING id;
+  `;
+
+  const { rows } = await pool.query(query, [foodItemId, restaurantId]);
+  return Boolean(rows[0]);
 }
 
 async function listRestaurantOrders({ restaurantId, status, limit, offset }) {
@@ -336,12 +441,15 @@ async function getTopSellingItems({ restaurantId, days, limit = 5 }) {
 }
 
 module.exports = {
+  createRestaurantForOwner,
   findRestaurantById,
   findRestaurantByOwnerId,
   listOperatingHours,
+  updateRestaurantProfile,
   listMenuItems,
   createMenuItem,
   updateMenuItem,
+  deleteMenuItem,
   listRestaurantOrders,
   updateRestaurantOrderStatus,
   getDashboardOverview,

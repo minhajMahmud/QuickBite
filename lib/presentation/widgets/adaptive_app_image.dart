@@ -42,14 +42,13 @@ class AdaptiveAppImage extends StatelessWidget {
       ),
     );
 
-    final fallbackError = Container(
-      color: AppColors.secondaryLight,
-      alignment: Alignment.center,
-      child: const Icon(
-        Icons.broken_image_outlined,
-        color: AppColors.muted,
-      ),
-    );
+    final fallbackError = _defaultFallbackError();
+
+    if (source.trim().isEmpty) {
+      final missing = error ?? fallbackError;
+      if (borderRadius == null) return missing;
+      return ClipRRect(borderRadius: borderRadius!, child: missing);
+    }
 
     final image = _isNetwork
         ? Image.network(
@@ -76,6 +75,20 @@ class AdaptiveAppImage extends StatelessWidget {
     return ClipRRect(
       borderRadius: borderRadius!,
       child: image,
+    );
+  }
+
+  Widget _defaultFallbackError() {
+    return Container(
+      width: width,
+      height: height,
+      color: AppColors.secondaryLight,
+      alignment: Alignment.center,
+      child: const Icon(
+        Icons.image_not_supported_outlined,
+        color: AppColors.muted,
+        size: 26,
+      ),
     );
   }
 }

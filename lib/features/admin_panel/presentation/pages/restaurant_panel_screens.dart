@@ -2,6 +2,8 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'dart:typed_data';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
@@ -170,7 +172,8 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
       title: 'Menu Management',
       subtitle: 'Manage your food items',
       action: ElevatedButton.icon(
-        onPressed: () => _showMenuItemDialog(context),
+        onPressed: () =>
+            _showMenuItemDialog(context, categories: state.categories),
         icon: const Icon(Icons.add),
         label: const Text('Add Item'),
         style: ElevatedButton.styleFrom(
@@ -240,17 +243,16 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
                   final item = filteredItems[index];
                   return _MenuItemCard(
                     item: item,
-                    onEdit: () =>
-                        _showMenuItemDialog(context, existingItem: item),
+                    onEdit: () => _showMenuItemDialog(
+                      context,
+                      categories: state.categories,
+                      existingItem: item,
+                    ),
                     onDelete: () {
-                      ref
-                          .read(restaurantPanelProvider.notifier)
-                          .deleteMenuItem(item.id);
+                      _handleDeleteMenuItem(context, item.id);
                     },
                     onToggleVisibility: () {
-                      ref
-                          .read(restaurantPanelProvider.notifier)
-                          .toggleMenuAvailability(item.id);
+                      _handleToggleMenuAvailability(context, item.id);
                     },
                   );
                 },
@@ -262,8 +264,11 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
     );
   }
 
-  Future<void> _showMenuItemDialog(BuildContext context,
-      {RestaurantMenuItem? existingItem}) async {
+  Future<void> _showMenuItemDialog(
+    BuildContext context, {
+    required List<RestaurantMenuCategory> categories,
+    RestaurantMenuItem? existingItem,
+  }) async {
     final parentContext = context;
     final nameController =
         TextEditingController(text: existingItem?.name ?? '');
@@ -274,11 +279,27 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
     final imageController =
         TextEditingController(text: existingItem?.imageUrl ?? '');
 
-    String category = existingItem?.category ?? 'Burgers';
+    final fallbackCategories = [
+      const RestaurantMenuCategory(id: 'cat-2', name: 'Burgers'),
+      const RestaurantMenuCategory(id: 'cat-6', name: 'Beverages'),
+    ];
+    final categoryOptions =
+        categories.isEmpty ? fallbackCategories : categories;
+
+    RestaurantMenuCategory selectedCategory = categoryOptions.firstWhere(
+      (item) => item.name == existingItem?.category,
+      orElse: () => categoryOptions.first,
+    );
+
     bool popular = existingItem?.popular ?? false;
     bool available = existingItem?.isAvailable ?? true;
+    bool isSaving = false;
+    bool isPickingImage = false;
+    Uint8List? selectedImageBytes;
+    String? selectedImageMimeType;
 
     final formKey = GlobalKey<FormState>();
+    final imagePicker = ImagePicker();
 
     final result = await showDialog<bool>(
       context: parentContext,
@@ -288,158 +309,351 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
             title:
                 Text(existingItem == null ? 'Add Menu Item' : 'Edit Menu Item'),
             content: SizedBox(
-              width: 460,
-              child: Form(
-                key: formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextFormField(
-                      controller: nameController,
-                      decoration: const InputDecoration(labelText: 'Item name'),
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty)
-                              ? 'Required'
-                              : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: descriptionController,
-                      maxLines: 2,
-                      decoration:
-                          const InputDecoration(labelText: 'Description'),
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty)
-                              ? 'Required'
-                              : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: priceController,
-                      keyboardType:
-                          const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Price'),
-                      validator: (value) {
-                        if (value == null || value.trim().isEmpty) {
-                          return 'Required';
-                        }
-                        final parsed = double.tryParse(value.trim());
-                        if (parsed == null || parsed <= 0) {
-                          return 'Enter a valid price';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: imageController,
-                      decoration: const InputDecoration(labelText: 'Image URL'),
-                      validator: (value) =>
-                          (value == null || value.trim().isEmpty)
-                              ? 'Required'
-                              : null,
-                    ),
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<String>(
-                      value: category,
-                      items: const [
-                        DropdownMenuItem(
-                            value: 'Burgers', child: Text('Burgers')),
-                        DropdownMenuItem(value: 'Sides', child: Text('Sides')),
-                        DropdownMenuItem(
-                            value: 'Salads', child: Text('Salads')),
-                        DropdownMenuItem(value: 'Wraps', child: Text('Wraps')),
-                        DropdownMenuItem(
-                            value: 'Drinks', child: Text('Drinks')),
-                        DropdownMenuItem(
-                            value: 'Starters', child: Text('Starters')),
+              width: 520,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(dialogContext).size.height * 0.72,
+                ),
+                child: SingleChildScrollView(
+                  child: Form(
+                    key: formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(context)
+                                  .dividerColor
+                                  .withOpacity(0.25),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: selectedImageBytes != null
+                                    ? Image.memory(
+                                        selectedImageBytes!,
+                                        width: 72,
+                                        height: 72,
+                                        fit: BoxFit.cover,
+                                      )
+                                    : (imageController.text.trim().isNotEmpty
+                                        ? Image.network(
+                                            imageController.text.trim(),
+                                            width: 72,
+                                            height: 72,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) =>
+                                                Container(
+                                              width: 72,
+                                              height: 72,
+                                              color: Colors.grey.shade200,
+                                              child: const Icon(Icons.fastfood),
+                                            ),
+                                          )
+                                        : Container(
+                                            width: 72,
+                                            height: 72,
+                                            color: Colors.grey.shade200,
+                                            child: const Icon(Icons.fastfood),
+                                          )),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'Food Image',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w600),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      selectedImageBytes != null
+                                          ? 'Selected from device'
+                                          : 'Upload from gallery or paste an image URL',
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Wrap(
+                                      spacing: 8,
+                                      runSpacing: 8,
+                                      children: [
+                                        ElevatedButton.icon(
+                                          onPressed: isPickingImage
+                                              ? null
+                                              : () async {
+                                                  setModalState(() {
+                                                    isPickingImage = true;
+                                                  });
+                                                  try {
+                                                    final picked =
+                                                        await imagePicker
+                                                            .pickImage(
+                                                      source:
+                                                          ImageSource.gallery,
+                                                      imageQuality: 85,
+                                                      maxWidth: 1400,
+                                                    );
+
+                                                    if (picked != null) {
+                                                      final bytes = await picked
+                                                          .readAsBytes();
+                                                      if (!dialogContext
+                                                          .mounted) {
+                                                        return;
+                                                      }
+                                                      setModalState(() {
+                                                        selectedImageBytes =
+                                                            bytes;
+                                                        selectedImageMimeType =
+                                                            picked.mimeType ??
+                                                                'image/jpeg';
+                                                      });
+
+                                                      if (bytes.lengthInBytes >
+                                                          2 * 1024 * 1024) {
+                                                        ScaffoldMessenger.of(
+                                                                dialogContext)
+                                                            .showSnackBar(
+                                                          const SnackBar(
+                                                            content: Text(
+                                                              'Large image selected — it will be compressed before upload.',
+                                                            ),
+                                                          ),
+                                                        );
+                                                      }
+                                                    }
+                                                  } finally {
+                                                    if (dialogContext.mounted) {
+                                                      setModalState(() {
+                                                        isPickingImage = false;
+                                                      });
+                                                    }
+                                                  }
+                                                },
+                                          icon: isPickingImage
+                                              ? const SizedBox(
+                                                  width: 14,
+                                                  height: 14,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                          strokeWidth: 2),
+                                                )
+                                              : const Icon(Icons.upload_file),
+                                          label: const Text('Upload'),
+                                        ),
+                                        OutlinedButton(
+                                          onPressed: () {
+                                            setModalState(() {
+                                              selectedImageBytes = null;
+                                              selectedImageMimeType = null;
+                                            });
+                                          },
+                                          child: const Text('Use URL only'),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: nameController,
+                          decoration:
+                              const InputDecoration(labelText: 'Item name'),
+                          validator: (value) =>
+                              (value == null || value.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: descriptionController,
+                          maxLines: 2,
+                          decoration:
+                              const InputDecoration(labelText: 'Description'),
+                          validator: (value) =>
+                              (value == null || value.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: priceController,
+                          keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true),
+                          decoration: const InputDecoration(labelText: 'Price'),
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty) {
+                              return 'Required';
+                            }
+                            final parsed = double.tryParse(value.trim());
+                            if (parsed == null || parsed <= 0) {
+                              return 'Enter a valid price';
+                            }
+                            return null;
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        TextFormField(
+                          controller: imageController,
+                          decoration: const InputDecoration(
+                            labelText: 'Image URL (optional)',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: selectedCategory.id,
+                          items: categoryOptions
+                              .map(
+                                (item) => DropdownMenuItem(
+                                  value: item.id,
+                                  child: Text(item.name),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (value) {
+                            if (value != null) {
+                              final nextCategory = categoryOptions.firstWhere(
+                                (item) => item.id == value,
+                                orElse: () => categoryOptions.first,
+                              );
+                              setModalState(
+                                  () => selectedCategory = nextCategory);
+                            }
+                          },
+                          decoration:
+                              const InputDecoration(labelText: 'Category'),
+                        ),
+                        const SizedBox(height: 8),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: popular,
+                          title: const Text('Popular item'),
+                          onChanged: (value) =>
+                              setModalState(() => popular = value),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: available,
+                          title: const Text('Available'),
+                          onChanged: (value) =>
+                              setModalState(() => available = value),
+                        ),
                       ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          setModalState(() => category = value);
-                        }
-                      },
-                      decoration: const InputDecoration(labelText: 'Category'),
                     ),
-                    const SizedBox(height: 8),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: popular,
-                      title: const Text('Popular item'),
-                      onChanged: (value) =>
-                          setModalState(() => popular = value),
-                    ),
-                    SwitchListTile(
-                      contentPadding: EdgeInsets.zero,
-                      value: available,
-                      title: const Text('Available'),
-                      onChanged: (value) =>
-                          setModalState(() => available = value),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(dialogContext, false),
+                onPressed:
+                    isSaving ? null : () => Navigator.pop(dialogContext, false),
                 child: const Text('Cancel'),
               ),
               ElevatedButton(
-                onPressed: () async {
-                  if (formKey.currentState?.validate() ?? false) {
-                    final parsedPrice =
-                        double.parse(priceController.text.trim());
-                    final notifier = ref.read(restaurantPanelProvider.notifier);
+                onPressed: isSaving
+                    ? null
+                    : () async {
+                        if (formKey.currentState?.validate() ?? false) {
+                          if (selectedImageBytes == null &&
+                              imageController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(dialogContext).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Please upload an image or provide an image URL.'),
+                              ),
+                            );
+                            return;
+                          }
 
-                    if (existingItem == null) {
-                      final created = await notifier.createMenuItemInBackend(
-                        name: nameController.text.trim(),
-                        description: descriptionController.text.trim(),
-                        category: category,
-                        price: parsedPrice,
-                        imageUrl: imageController.text.trim(),
-                        popular: popular,
-                        available: available,
-                      );
+                          setModalState(() => isSaving = true);
 
-                      if (!created) {
-                        if (!parentContext.mounted) {
-                          return;
+                          final parsedPrice =
+                              double.parse(priceController.text.trim());
+                          final notifier =
+                              ref.read(restaurantPanelProvider.notifier);
+
+                          if (existingItem == null) {
+                            final created =
+                                await notifier.createMenuItemInBackend(
+                              name: nameController.text.trim(),
+                              description: descriptionController.text.trim(),
+                              categoryId: selectedCategory.id,
+                              category: selectedCategory.name,
+                              price: parsedPrice,
+                              imageUrl: imageController.text.trim(),
+                              imageBytes: selectedImageBytes,
+                              imageMimeType: selectedImageMimeType,
+                              popular: popular,
+                              available: available,
+                            );
+
+                            if (!created) {
+                              if (!parentContext.mounted) return;
+
+                              final message = notifier.lastBackendError ??
+                                  (notifier.isBackendAvailable
+                                      ? 'Could not save item to backend. Please try again.'
+                                      : 'Backend save is unavailable. Please login and ensure backend is running.');
+
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                SnackBar(content: Text(message)),
+                              );
+                              setModalState(() => isSaving = false);
+                              return;
+                            }
+                          } else {
+                            final updated =
+                                await notifier.updateMenuItemInBackend(
+                              foodItemId: existingItem.id,
+                              name: nameController.text.trim(),
+                              description: descriptionController.text.trim(),
+                              categoryId: selectedCategory.id,
+                              price: parsedPrice,
+                              imageUrl: imageController.text.trim(),
+                              imageBytes: selectedImageBytes,
+                              imageMimeType: selectedImageMimeType,
+                              popular: popular,
+                              available: available,
+                            );
+
+                            if (!updated) {
+                              if (!parentContext.mounted) return;
+
+                              final message = notifier.lastBackendError ??
+                                  (notifier.isBackendAvailable
+                                      ? 'Could not update item in backend. Please try again.'
+                                      : 'Backend save is unavailable. Please login and ensure backend is running.');
+
+                              ScaffoldMessenger.of(parentContext).showSnackBar(
+                                SnackBar(content: Text(message)),
+                              );
+                              setModalState(() => isSaving = false);
+                              return;
+                            }
+                          }
+
+                          if (!dialogContext.mounted) return;
+                          Navigator.pop(dialogContext, true);
                         }
-
-                        final message = notifier.isBackendAvailable
-                            ? 'Could not save item to backend. Please try again.'
-                            : 'Backend save is unavailable on this platform. Use Android, iOS, Web, or macOS for live DB writes.';
-
-                        ScaffoldMessenger.of(parentContext).showSnackBar(
-                          SnackBar(
-                            content: Text(message),
-                          ),
-                        );
-                        return;
-                      }
-                    } else {
-                      notifier.updateMenuItem(
-                        existingItem.copyWith(
-                          name: nameController.text.trim(),
-                          description: descriptionController.text.trim(),
-                          category: category,
-                          price: parsedPrice,
-                          imageUrl: imageController.text.trim(),
-                          popular: popular,
-                          isAvailable: available,
-                        ),
-                      );
-                    }
-
-                    if (!dialogContext.mounted) {
-                      return;
-                    }
-                    Navigator.pop(dialogContext, true);
-                  }
-                },
-                child: const Text('Save'),
+                      },
+                child: Text(isSaving ? 'Saving...' : 'Save'),
               ),
             ],
           );
@@ -448,9 +662,7 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
     );
 
     if (result == true) {
-      if (!parentContext.mounted) {
-        return;
-      }
+      if (!parentContext.mounted) return;
       ScaffoldMessenger.of(parentContext).showSnackBar(
         SnackBar(
           content: Text(
@@ -458,6 +670,73 @@ class _RestaurantMenuScreenState extends ConsumerState<RestaurantMenuScreen> {
         ),
       );
     }
+  }
+
+  Future<void> _handleToggleMenuAvailability(
+      BuildContext context, String itemId) async {
+    final notifier = ref.read(restaurantPanelProvider.notifier);
+    final success = await notifier.toggleMenuAvailabilityInBackend(
+      foodItemId: itemId,
+    );
+
+    if (!context.mounted) return;
+
+    if (!success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            notifier.lastBackendError ??
+                'Could not update availability right now.',
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> _handleDeleteMenuItem(
+      BuildContext context, String itemId) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete menu item?'),
+        content: const Text(
+          'This will remove the item from your menu. You can add it again later if needed.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFE53E3E),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true || !context.mounted) {
+      return;
+    }
+
+    final notifier = ref.read(restaurantPanelProvider.notifier);
+    final success = await notifier.deleteMenuItemInBackend(foodItemId: itemId);
+
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'Menu item deleted'
+              : (notifier.lastBackendError ?? 'Could not delete menu item.'),
+        ),
+      ),
+    );
   }
 }
 
@@ -671,6 +950,10 @@ class RestaurantProfileScreen extends ConsumerStatefulWidget {
 class _RestaurantProfileScreenState
     extends ConsumerState<RestaurantProfileScreen> {
   final _formKey = GlobalKey<FormState>();
+  final ImagePicker _profileImagePicker = ImagePicker();
+  Uint8List? _selectedProfileImageBytes;
+  String? _selectedProfileImageMimeType;
+  bool _isPickingProfileImage = false;
 
   late final TextEditingController _nameController;
   late final TextEditingController _cuisineController;
@@ -737,22 +1020,30 @@ class _RestaurantProfileScreenState
 
                       final image = ClipRRect(
                         borderRadius: BorderRadius.circular(16),
-                        child: Image.network(
-                          _imageController.text,
-                          width: 86,
-                          height: 86,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 86,
-                            height: 86,
-                            color: const Color(0xFFFF6B35).withOpacity(0.15),
-                            child: const Icon(
-                              Icons.storefront_outlined,
-                              size: 32,
-                              color: Color(0xFFFF6B35),
-                            ),
-                          ),
-                        ),
+                        child: _selectedProfileImageBytes != null
+                            ? Image.memory(
+                                _selectedProfileImageBytes!,
+                                width: 86,
+                                height: 86,
+                                fit: BoxFit.cover,
+                              )
+                            : Image.network(
+                                _imageController.text,
+                                width: 86,
+                                height: 86,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(
+                                  width: 86,
+                                  height: 86,
+                                  color:
+                                      const Color(0xFFFF6B35).withOpacity(0.15),
+                                  child: const Icon(
+                                    Icons.storefront_outlined,
+                                    size: 32,
+                                    color: Color(0xFFFF6B35),
+                                  ),
+                                ),
+                              ),
                       );
 
                       final details = Column(
@@ -794,6 +1085,80 @@ class _RestaurantProfileScreenState
                     },
                   ),
                   const SizedBox(height: 18),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: _isPickingProfileImage
+                            ? null
+                            : () async {
+                                setState(() {
+                                  _isPickingProfileImage = true;
+                                });
+
+                                try {
+                                  final picked =
+                                      await _profileImagePicker.pickImage(
+                                    source: ImageSource.gallery,
+                                    imageQuality: 85,
+                                    maxWidth: 1800,
+                                  );
+
+                                  if (picked == null) {
+                                    return;
+                                  }
+
+                                  final bytes = await picked.readAsBytes();
+                                  if (!context.mounted) {
+                                    return;
+                                  }
+
+                                  setState(() {
+                                    _selectedProfileImageBytes = bytes;
+                                    _selectedProfileImageMimeType =
+                                        picked.mimeType ?? 'image/jpeg';
+                                  });
+
+                                  if (bytes.lengthInBytes > 2 * 1024 * 1024) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Large image selected — it will be compressed before upload.',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                } finally {
+                                  if (context.mounted) {
+                                    setState(() {
+                                      _isPickingProfileImage = false;
+                                    });
+                                  }
+                                }
+                              },
+                        icon: _isPickingProfileImage
+                            ? const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child:
+                                    CircularProgressIndicator(strokeWidth: 2),
+                              )
+                            : const Icon(Icons.upload_file),
+                        label: const Text('Upload Image'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () {
+                          setState(() {
+                            _selectedProfileImageBytes = null;
+                            _selectedProfileImageMimeType = null;
+                          });
+                        },
+                        child: const Text('Use URL only'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final isNarrow = constraints.maxWidth < 780;
@@ -849,7 +1214,15 @@ class _RestaurantProfileScreenState
                       );
                     },
                   ),
-                  _buildInput(_imageController, 'Image URL'),
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: TextFormField(
+                      controller: _imageController,
+                      decoration: const InputDecoration(
+                        labelText: 'Image URL (optional when uploaded)',
+                      ),
+                    ),
+                  ),
                   TextFormField(
                     controller: _descriptionController,
                     maxLines: 3,
@@ -898,26 +1271,56 @@ class _RestaurantProfileScreenState
     return null;
   }
 
-  void _saveProfile() {
+  Future<void> _saveProfile() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
 
-    ref.read(restaurantPanelProvider.notifier).updateProfile(
-          RestaurantProfileData(
-            name: _nameController.text.trim(),
-            cuisine: _cuisineController.text.trim(),
-            phone: _phoneController.text.trim(),
-            email: _emailController.text.trim(),
-            address: _addressController.text.trim(),
-            hours: _hoursController.text.trim(),
-            description: _descriptionController.text.trim(),
-            imageUrl: _imageController.text.trim(),
-          ),
-        );
+    final profile = RestaurantProfileData(
+      name: _nameController.text.trim(),
+      cuisine: _cuisineController.text.trim(),
+      phone: _phoneController.text.trim(),
+      email: _emailController.text.trim(),
+      address: _addressController.text.trim(),
+      hours: _hoursController.text.trim(),
+      description: _descriptionController.text.trim(),
+      imageUrl: _imageController.text.trim(),
+    );
+
+    final notifier = ref.read(restaurantPanelProvider.notifier);
+    final success = await notifier.updateProfileInBackend(
+      profile,
+      imageBytes: _selectedProfileImageBytes,
+      imageMimeType: _selectedProfileImageMimeType,
+    );
+
+    if (!mounted) return;
+
+    if (success) {
+      final latestProfile = ref.read(restaurantPanelProvider).profile;
+      if (latestProfile.imageUrl.isNotEmpty) {
+        _imageController.text = latestProfile.imageUrl;
+      }
+
+      ref.invalidate(restaurantsProvider);
+      ref.invalidate(featuredRestaurantsProvider);
+      ref.invalidate(filteredRestaurantsProvider);
+
+      setState(() {
+        _selectedProfileImageBytes = null;
+        _selectedProfileImageMimeType = null;
+      });
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile updated successfully')),
+      SnackBar(
+        content: Text(
+          success
+              ? 'Profile updated successfully'
+              : (notifier.lastBackendError ??
+                  'Could not update profile right now.'),
+        ),
+      ),
     );
   }
 

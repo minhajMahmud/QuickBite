@@ -1,7 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
 
 import '../../../authentication/presentation/providers/auth_provider.dart';
+import '../../../authentication/data/services/api_client.dart';
 
 class RestaurantProfileData {
   final String name;
@@ -91,6 +93,16 @@ class RestaurantMenuItem {
   }
 }
 
+class RestaurantMenuCategory {
+  final String id;
+  final String name;
+
+  const RestaurantMenuCategory({
+    required this.id,
+    required this.name,
+  });
+}
+
 class RestaurantPanelOrder {
   final String id;
   final String customerName;
@@ -133,12 +145,14 @@ class RestaurantPanelOrder {
 
 class RestaurantPanelState {
   final RestaurantProfileData profile;
+  final List<RestaurantMenuCategory> categories;
   final List<RestaurantMenuItem> menuItems;
   final List<RestaurantPanelOrder> orders;
   final String? restaurantId;
 
   const RestaurantPanelState({
     required this.profile,
+    required this.categories,
     required this.menuItems,
     required this.orders,
     this.restaurantId,
@@ -146,6 +160,7 @@ class RestaurantPanelState {
 
   RestaurantPanelState copyWith({
     RestaurantProfileData? profile,
+    List<RestaurantMenuCategory>? categories,
     List<RestaurantMenuItem>? menuItems,
     List<RestaurantPanelOrder>? orders,
     String? restaurantId,
@@ -153,6 +168,7 @@ class RestaurantPanelState {
   }) {
     return RestaurantPanelState(
       profile: profile ?? this.profile,
+      categories: categories ?? this.categories,
       menuItems: menuItems ?? this.menuItems,
       orders: orders ?? this.orders,
       restaurantId:
@@ -162,13 +178,23 @@ class RestaurantPanelState {
 }
 
 class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
+  static const String _backendOrigin = 'http://localhost:3000';
+  final ApiClient _apiClient;
+  final String? _authToken;
   final String? _preferredRestaurantId;
   final String? _preferredRestaurantName;
+  String? _lastBackendError;
+
+  String? get lastBackendError => _lastBackendError;
 
   RestaurantPanelNotifier({
+    required ApiClient apiClient,
+    String? authToken,
     String? preferredRestaurantId,
     String? preferredRestaurantName,
-  })  : _preferredRestaurantId = preferredRestaurantId,
+  })  : _apiClient = apiClient,
+        _authToken = authToken,
+        _preferredRestaurantId = preferredRestaurantId,
         _preferredRestaurantName = preferredRestaurantName,
         super(
           const RestaurantPanelState(
@@ -184,6 +210,10 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
               imageUrl:
                   'https://images.unsplash.com/photo-1559339352-11d035aa65de?w=400&h=400&fit=crop',
             ),
+            categories: [
+              RestaurantMenuCategory(id: 'cat-2', name: 'Burgers'),
+              RestaurantMenuCategory(id: 'cat-6', name: 'Beverages'),
+            ],
             menuItems: [],
             orders: [
               RestaurantPanelOrder(
@@ -236,22 +266,222 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
           ),
         );
 
-  bool get isBackendAvailable => false;
+  bool get isBackendAvailable =>
+      (_authToken != null && _authToken!.trim().isNotEmpty);
+
+  List<RestaurantMenuCategory> _sortCategories(
+      List<RestaurantMenuCategory> items) {
+    final sorted = [...items];
+    sorted.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return sorted;
+  }
+
+  double _toDouble(dynamic value, {double fallback = 0}) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    return double.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  RestaurantMenuItem _mapMenuItem(Map<String, dynamic> row) {
+    final rawImage = row['image']?.toString() ?? '';
+    final image =
+        rawImage.startsWith('/') ? '$_backendOrigin$rawImage' : rawImage;
+
+    return RestaurantMenuItem(
+      id: row['id']?.toString() ?? '',
+      name: row['name']?.toString() ?? 'Unnamed Item',
+      description: row['description']?.toString() ?? '',
+      category: row['category_name']?.toString() ?? 'Uncategorized',
+      price: _toDouble(row['price']),
+      imageUrl: image,
+      popular: row['is_popular'] == true,
+      isAvailable:
+          (row['availability']?.toString() ?? 'available') == 'available',
+    );
+  }
+
+  String _toPanelOrderStatus(String backendStatus) {
+    switch (backendStatus) {
+      case 'pending':
+        return 'new';
+      case 'confirmed':
+        return 'accepted';
+      case 'preparing':
+        return 'preparing';
+      case 'ready':
+        return 'ready';
+      case 'on_the_way':
+      case 'delivered':
+        return 'picked_up';
+      case 'cancelled':
+        return 'rejected';
+      default:
+        return 'new';
+    }
+  }
+
+  String _toBackendOrderStatus(String panelStatus) {
+    switch (panelStatus) {
+      case 'new':
+        return 'pending';
+      case 'accepted':
+        return 'confirmed';
+      case 'preparing':
+        return 'preparing';
+      case 'ready':
+        return 'ready';
+      case 'picked_up':
+        return 'delivered';
+      case 'rejected':
+        return 'cancelled';
+      default:
+        return 'pending';
+    }
+  }
+
+  RestaurantPanelOrder _mapOrder(Map<String, dynamic> row) {
+    final itemsRaw = row['items'];
+    final items = <String>[];
+
+    if (itemsRaw is List) {
+      for (final item in itemsRaw) {
+        if (item is Map) {
+          final name = item['name']?.toString() ?? 'Item';
+          final qty = int.tryParse(item['quantity']?.toString() ?? '1') ?? 1;
+          items.add('$name x$qty');
+        }
+      }
+    }
+
+    final dateRaw = row['created_at']?.toString();
+    DateTime? createdAt;
+    if (dateRaw != null) {
+      createdAt = DateTime.tryParse(dateRaw)?.toLocal();
+    }
+
+    String timeAgo = 'Just now';
+    if (createdAt != null) {
+      final diff = DateTime.now().difference(createdAt);
+      if (diff.inMinutes < 1) {
+        timeAgo = 'Just now';
+      } else if (diff.inHours < 1) {
+        timeAgo = '${diff.inMinutes} min ago';
+      } else if (diff.inDays < 1) {
+        timeAgo = '${diff.inHours} hr ago';
+      } else {
+        timeAgo = '${diff.inDays} day(s) ago';
+      }
+    }
+
+    return RestaurantPanelOrder(
+      id: row['id']?.toString() ?? '',
+      customerName: row['customer_name']?.toString() ?? 'Customer',
+      items: items,
+      address: 'Address not provided',
+      timeAgo: timeAgo,
+      total: _toDouble(row['total_amount']),
+      status: _toPanelOrderStatus(row['order_status']?.toString() ?? 'pending'),
+    );
+  }
+
+  RestaurantProfileData _mapProfile(
+      Map<String, dynamic> restaurant, List<dynamic> operatingHours) {
+    final addressParts = [
+      restaurant['street_address']?.toString(),
+      restaurant['city']?.toString(),
+      restaurant['state']?.toString(),
+      restaurant['postal_code']?.toString(),
+    ].where((part) => part != null && part.trim().isNotEmpty).join(', ');
+
+    String hours = 'Set operating hours';
+    if (operatingHours.isNotEmpty) {
+      final openDays = operatingHours
+          .whereType<Map>()
+          .where((h) => h['is_closed'] != true)
+          .toList();
+      if (openDays.isNotEmpty) {
+        final first = openDays.first;
+        final opening = first['opening_time']?.toString() ?? '';
+        final closing = first['closing_time']?.toString() ?? '';
+        hours = '$opening - $closing';
+      }
+    }
+
+    final rawImage = restaurant['image']?.toString() ?? '';
+    final image =
+        rawImage.startsWith('/') ? '$_backendOrigin$rawImage' : rawImage;
+
+    return RestaurantProfileData(
+      name: restaurant['name']?.toString() ?? state.profile.name,
+      cuisine: restaurant['cuisine']?.toString() ?? state.profile.cuisine,
+      phone: restaurant['phone']?.toString() ?? state.profile.phone,
+      email: restaurant['email']?.toString() ?? state.profile.email,
+      address: addressParts.isEmpty ? state.profile.address : addressParts,
+      hours: hours,
+      description:
+          restaurant['description']?.toString() ?? state.profile.description,
+      imageUrl: image.isEmpty ? state.profile.imageUrl : image,
+    );
+  }
 
   Future<void> hydrateFromBackend() async {
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.linux) {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
       return;
     }
 
-    // Remote backend removed: retain existing local/mock dashboard state.
-    state = state.copyWith(
-      restaurantId: _preferredRestaurantId ?? state.restaurantId,
-      profile: state.profile.copyWith(
-        name: _preferredRestaurantName?.isNotEmpty == true
-            ? _preferredRestaurantName!
-            : state.profile.name,
-      ),
-    );
+    try {
+      final overviewRaw = await _apiClient.getRestaurantDashboardOverview(
+        token: _authToken!,
+      );
+      final categoriesRaw = await _apiClient.getCatalogCategories();
+      final menuRaw = await _apiClient.getRestaurantDashboardMenu(
+        token: _authToken!,
+      );
+      final ordersRaw = await _apiClient.getRestaurantDashboardOrders(
+        token: _authToken!,
+      );
+
+      final categories = categoriesRaw
+          .map((row) => RestaurantMenuCategory(
+                id: row['id']?.toString() ?? '',
+                name: row['name']?.toString() ?? 'Category',
+              ))
+          .where((item) => item.id.isNotEmpty)
+          .toList();
+
+      final menuItems = menuRaw.map(_mapMenuItem).toList();
+      final orders = ordersRaw.map(_mapOrder).toList();
+
+      final restaurantRaw = overviewRaw['restaurant'] is Map<String, dynamic>
+          ? overviewRaw['restaurant'] as Map<String, dynamic>
+          : <String, dynamic>{};
+      final operatingHoursRaw = overviewRaw['operatingHours'] is List
+          ? overviewRaw['operatingHours'] as List
+          : const [];
+
+      state = state.copyWith(
+        restaurantId: _preferredRestaurantId ?? state.restaurantId,
+        categories:
+            categories.isEmpty ? state.categories : _sortCategories(categories),
+        menuItems: menuItems,
+        orders: orders,
+        profile: _mapProfile(restaurantRaw, operatingHoursRaw),
+      );
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      state = state.copyWith(
+        restaurantId: _preferredRestaurantId ?? state.restaurantId,
+        profile: state.profile.copyWith(
+          name: _preferredRestaurantName?.isNotEmpty == true
+              ? _preferredRestaurantName!
+              : state.profile.name,
+        ),
+      );
+    }
   }
 
   void updateProfile(RestaurantProfileData profile) {
@@ -289,80 +519,280 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
   }
 
   Future<void> updateOrderStatus(String orderId, String status) async {
-    state = state.copyWith(
-      orders: state.orders
-          .map((order) =>
-              order.id == orderId ? order.copyWith(status: status) : order)
-          .toList(),
-    );
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return;
+    }
+
+    try {
+      final response = await _apiClient.updateRestaurantDashboardOrderStatus(
+        token: _authToken!,
+        orderId: orderId,
+        status: _toBackendOrderStatus(status),
+      );
+
+      final orderRaw = response['order'];
+      if (orderRaw is Map<String, dynamic>) {
+        final mapped = _mapOrder(orderRaw);
+        state = state.copyWith(
+          orders: state.orders
+              .map((order) => order.id == mapped.id ? mapped : order)
+              .toList(),
+        );
+      } else {
+        state = state.copyWith(
+          orders: state.orders
+              .map((order) =>
+                  order.id == orderId ? order.copyWith(status: status) : order)
+              .toList(),
+        );
+      }
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+    }
   }
 
-  String _categoryNameToId(String categoryName) {
-    switch (categoryName.trim().toLowerCase()) {
-      case 'pizza':
-        return 'cat-1';
-      case 'burgers':
-        return 'cat-2';
-      case 'pasta':
-        return 'cat-3';
-      case 'salads':
-        return 'cat-4';
-      case 'desserts':
-        return 'cat-5';
-      case 'drinks':
-      case 'beverages':
-        return 'cat-6';
-      case 'sides':
-      case 'wraps':
-      case 'starters':
-      default:
-        return 'cat-2';
+  Future<bool> updateProfileInBackend(
+    RestaurantProfileData profile, {
+    Uint8List? imageBytes,
+    String? imageMimeType,
+  }) async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return false;
+    }
+
+    try {
+      final payload = {
+        'name': profile.name,
+        'cuisine': profile.cuisine,
+        'phone': profile.phone,
+        'email': profile.email,
+        'address': profile.address,
+        'description': profile.description,
+        'image': profile.imageUrl,
+      };
+
+      final response = await _apiClient.updateRestaurantDashboardProfile(
+        token: _authToken!,
+        payload: payload,
+        imageBytes: imageBytes,
+        imageMimeType: imageMimeType,
+      );
+
+      final restaurantRaw = response['restaurant'];
+      if (restaurantRaw is Map<String, dynamic>) {
+        final mapped = _mapProfile(restaurantRaw, const []);
+        state = state.copyWith(profile: mapped.copyWith(hours: profile.hours));
+      } else {
+        state = state.copyWith(profile: profile);
+      }
+
+      return true;
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return false;
     }
   }
 
   Future<bool> createMenuItemInBackend({
     required String name,
     required String description,
+    required String categoryId,
     required String category,
     required double price,
     required String imageUrl,
+    Uint8List? imageBytes,
+    String? imageMimeType,
     required bool popular,
     required bool available,
   }) async {
-    final itemId = 'food-${DateTime.now().millisecondsSinceEpoch}';
-    final _ = _categoryNameToId(category);
+    _lastBackendError = null;
 
-    addMenuItem(
-      RestaurantMenuItem(
-        id: itemId,
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return false;
+    }
+
+    try {
+      final response = await _apiClient.createRestaurantDashboardMenuItem(
+        token: _authToken!,
+        categoryId: categoryId,
         name: name,
         description: description,
-        category: category,
         price: price,
-        imageUrl: imageUrl,
-        popular: popular,
-        isAvailable: available,
+        imageUrl: imageUrl.isEmpty ? null : imageUrl,
+        imageBytes: imageBytes,
+        imageMimeType: imageMimeType,
+        isPopular: popular,
+        availability: available ? 'available' : 'unavailable',
+      );
+
+      final itemRaw = response['item'];
+      if (itemRaw is Map<String, dynamic>) {
+        addMenuItem(_mapMenuItem(itemRaw));
+      } else {
+        await hydrateFromBackend();
+      }
+
+      return true;
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return false;
+    }
+  }
+
+  Future<bool> updateMenuItemInBackend({
+    required String foodItemId,
+    required String name,
+    required String description,
+    required String categoryId,
+    required double price,
+    required String imageUrl,
+    Uint8List? imageBytes,
+    String? imageMimeType,
+    required bool popular,
+    required bool available,
+  }) async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return false;
+    }
+
+    try {
+      final response = await _apiClient.updateRestaurantDashboardMenuItem(
+        token: _authToken!,
+        foodItemId: foodItemId,
+        categoryId: categoryId,
+        name: name,
+        description: description,
+        price: price,
+        imageUrl: imageUrl.isEmpty ? null : imageUrl,
+        imageBytes: imageBytes,
+        imageMimeType: imageMimeType,
+        isPopular: popular,
+        availability: available ? 'available' : 'unavailable',
+      );
+
+      final itemRaw = response['item'];
+      if (itemRaw is Map<String, dynamic>) {
+        updateMenuItem(_mapMenuItem(itemRaw));
+      } else {
+        await hydrateFromBackend();
+      }
+
+      return true;
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return false;
+    }
+  }
+
+  Future<bool> deleteMenuItemInBackend({
+    required String foodItemId,
+  }) async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return false;
+    }
+
+    try {
+      await _apiClient.deleteRestaurantDashboardMenuItem(
+        token: _authToken!,
+        foodItemId: foodItemId,
+      );
+
+      deleteMenuItem(foodItemId);
+      return true;
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return false;
+    }
+  }
+
+  Future<bool> toggleMenuAvailabilityInBackend({
+    required String foodItemId,
+  }) async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return false;
+    }
+
+    final currentItem = state.menuItems.firstWhere(
+      (item) => item.id == foodItemId,
+      orElse: () => const RestaurantMenuItem(
+        id: '',
+        name: '',
+        description: '',
+        category: '',
+        price: 0,
+        imageUrl: '',
       ),
     );
 
-    return true;
+    if (currentItem.id.isEmpty) {
+      _lastBackendError = 'Menu item not found in state.';
+      return false;
+    }
+
+    final nextAvailability =
+        currentItem.isAvailable ? 'unavailable' : 'available';
+
+    try {
+      final response = await _apiClient.updateRestaurantDashboardMenuItem(
+        token: _authToken!,
+        foodItemId: foodItemId,
+        availability: nextAvailability,
+      );
+
+      final itemRaw = response['item'];
+      if (itemRaw is Map<String, dynamic>) {
+        updateMenuItem(_mapMenuItem(itemRaw));
+      } else {
+        toggleMenuAvailability(foodItemId);
+      }
+
+      return true;
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return false;
+    }
   }
 }
 
 final restaurantPanelProvider =
     StateNotifierProvider<RestaurantPanelNotifier, RestaurantPanelState>((ref) {
   final authUser = ref.watch(authProvider.select((state) => state.user));
+  final authToken = ref.watch(authProvider.select((state) => state.token));
   return RestaurantPanelNotifier(
+    apiClient: ApiClient(),
+    authToken: authToken,
     preferredRestaurantId: authUser?.id,
     preferredRestaurantName: authUser?.name,
   );
 });
 
 final restaurantPanelCategoriesProvider = Provider<List<String>>((ref) {
-  final items =
-      ref.watch(restaurantPanelProvider.select((state) => state.menuItems));
-  final categories = items.map((item) => item.category).toSet().toList()
+  final state = ref.watch(restaurantPanelProvider);
+
+  final fromBackend = state.categories.map((item) => item.name).toSet();
+  final fromItems = state.menuItems.map((item) => item.category).toSet();
+
+  final categories = {...fromBackend, ...fromItems}
+      .where((name) => name.trim().isNotEmpty)
+      .toList()
     ..sort();
+
   return ['All', ...categories];
 });
 
@@ -376,5 +806,6 @@ final restaurantPanelRevenueProvider = Provider<double>((ref) {
 
 final restaurantPanelSyncProvider = FutureProvider<void>((ref) async {
   ref.watch(authProvider.select((state) => state.user?.id));
+  ref.watch(authProvider.select((state) => state.token));
   await ref.read(restaurantPanelProvider.notifier).hydrateFromBackend();
 });

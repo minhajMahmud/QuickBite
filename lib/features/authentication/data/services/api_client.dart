@@ -1,5 +1,7 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
+import 'dart:typed_data';
+import 'package:image/image.dart' as img;
 import '../models/auth_model.dart';
 
 class ApiClient {
@@ -13,6 +15,57 @@ class ApiClient {
   }
 
   ApiClient._internal();
+
+  ({Uint8List bytes, String mimeType}) _prepareMenuImageBytes(
+    Uint8List bytes, {
+    String? imageMimeType,
+    int maxDimension = 1600,
+    int quality = 82,
+  }) {
+    final originalMimeType = (imageMimeType == null || imageMimeType.isEmpty)
+        ? 'image/jpeg'
+        : imageMimeType;
+
+    if (bytes.lengthInBytes < 300 * 1024) {
+      return (bytes: bytes, mimeType: originalMimeType);
+    }
+
+    try {
+      final decoded = img.decodeImage(bytes);
+      if (decoded == null) {
+        return (bytes: bytes, mimeType: originalMimeType);
+      }
+
+      final shouldResize =
+          decoded.width > maxDimension || decoded.height > maxDimension;
+      final resized = shouldResize
+          ? img.copyResize(
+              decoded,
+              width: decoded.width >= decoded.height ? maxDimension : null,
+              height: decoded.height > decoded.width ? maxDimension : null,
+              maintainAspect: true,
+            )
+          : decoded;
+
+      final encoded =
+          Uint8List.fromList(img.encodeJpg(resized, quality: quality));
+      if (encoded.lengthInBytes < bytes.lengthInBytes) {
+        return (bytes: encoded, mimeType: 'image/jpeg');
+      }
+    } catch (_) {
+      // Fall through to original bytes.
+    }
+
+    return (bytes: bytes, mimeType: originalMimeType);
+  }
+
+  String _encodeMenuImageData(Uint8List bytes, {String? imageMimeType}) {
+    final prepared = _prepareMenuImageBytes(
+      bytes,
+      imageMimeType: imageMimeType,
+    );
+    return 'data:${prepared.mimeType};base64,${base64Encode(prepared.bytes)}';
+  }
 
   /// Register/Signup user
   Future<Map<String, dynamic>> signup(SignupRequest request) async {
@@ -790,6 +843,317 @@ class ApiClient {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 201 && response.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to create coupon');
+    }
+
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> getCatalogCategories() async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/catalog/categories'),
+      headers: {
+        'Accept': 'application/json',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch categories');
+    }
+
+    final raw = data['categories'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<List<Map<String, dynamic>>> getRestaurantDashboardMenu({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/restaurant-dashboard/menu'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch menu');
+    }
+
+    final raw = data['menu'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> getRestaurantDashboardOverview({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/restaurant-dashboard/overview'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch dashboard overview');
+    }
+
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> getRestaurantDashboardOrders({
+    required String token,
+    String? status,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/restaurant-dashboard/orders').replace(
+      queryParameters: status == null ? null : {'status': status},
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch restaurant orders');
+    }
+
+    final raw = data['orders'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> updateRestaurantDashboardOrderStatus({
+    required String token,
+    required String orderId,
+    required String status,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/restaurant-dashboard/orders/$orderId/status'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'status': status}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update order status');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> updateRestaurantDashboardProfile({
+    required String token,
+    required Map<String, dynamic> payload,
+    Uint8List? imageBytes,
+    String? imageMimeType,
+  }) async {
+    final requestPayload = Map<String, dynamic>.from(payload);
+
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      requestPayload['imageData'] = _encodeMenuImageData(
+        imageBytes,
+        imageMimeType: imageMimeType,
+      );
+    }
+
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/restaurant-dashboard/profile'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(requestPayload),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update restaurant profile');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> createRestaurantDashboardMenuItem({
+    required String token,
+    required String categoryId,
+    required String name,
+    required double price,
+    String? description,
+    String? imageUrl,
+    Uint8List? imageBytes,
+    String? imageMimeType,
+    bool isPopular = false,
+    bool isVegetarian = false,
+    bool isVegan = false,
+    bool isGlutenFree = false,
+    String availability = 'available',
+  }) async {
+    final payload = <String, dynamic>{
+      'categoryId': categoryId,
+      'name': name,
+      'price': price,
+      'description': description,
+      'image': imageUrl,
+      'isPopular': isPopular,
+      'isVegetarian': isVegetarian,
+      'isVegan': isVegan,
+      'isGlutenFree': isGlutenFree,
+      'availability': availability,
+    };
+
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      payload['imageData'] = _encodeMenuImageData(
+        imageBytes,
+        imageMimeType: imageMimeType,
+      );
+    }
+
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/restaurant-dashboard/menu'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(
+          const Duration(seconds: 45),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 201 && response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to create menu item');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> updateRestaurantDashboardMenuItem({
+    required String token,
+    required String foodItemId,
+    String? categoryId,
+    String? name,
+    double? price,
+    String? description,
+    String? imageUrl,
+    Uint8List? imageBytes,
+    String? imageMimeType,
+    bool? isPopular,
+    bool? isVegetarian,
+    bool? isVegan,
+    bool? isGlutenFree,
+    String? availability,
+  }) async {
+    final payload = <String, dynamic>{};
+
+    if (categoryId != null) payload['categoryId'] = categoryId;
+    if (name != null) payload['name'] = name;
+    if (price != null) payload['price'] = price;
+    if (description != null) payload['description'] = description;
+    if (imageUrl != null) payload['image'] = imageUrl;
+    if (isPopular != null) payload['isPopular'] = isPopular;
+    if (isVegetarian != null) payload['isVegetarian'] = isVegetarian;
+    if (isVegan != null) payload['isVegan'] = isVegan;
+    if (isGlutenFree != null) payload['isGlutenFree'] = isGlutenFree;
+    if (availability != null) payload['availability'] = availability;
+
+    if (imageBytes != null && imageBytes.isNotEmpty) {
+      payload['imageData'] = _encodeMenuImageData(
+        imageBytes,
+        imageMimeType: imageMimeType,
+      );
+    }
+
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/restaurant-dashboard/menu/$foodItemId'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(
+          const Duration(seconds: 45),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update menu item');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> deleteRestaurantDashboardMenuItem({
+    required String token,
+    required String foodItemId,
+  }) async {
+    final response = await http.delete(
+      Uri.parse('$_baseUrl/restaurant-dashboard/menu/$foodItemId'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to delete menu item');
     }
 
     return data;

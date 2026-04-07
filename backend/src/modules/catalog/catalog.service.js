@@ -6,7 +6,7 @@ function toRestaurantModel(row) {
   return {
     id: row.id,
     name: row.name,
-    image: row.image,
+    image: row.image || '',
     cuisine: row.cuisine,
     rating: Number(row.rating || 0),
     deliveryTime: row.delivery_time || '25-35 mins',

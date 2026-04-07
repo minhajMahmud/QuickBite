@@ -1,5 +1,25 @@
 import 'package:equatable/equatable.dart';
 
+const String _backendOrigin = 'http://localhost:3000';
+
+String _normalizeImageUrl(dynamic value) {
+  final raw = value?.toString() ?? '';
+  if (raw.isEmpty) return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    final uri = Uri.tryParse(raw);
+    final host = (uri?.host ?? '').toLowerCase();
+    if (host == 'api.example.com') return '';
+    return raw;
+  }
+  if (raw.startsWith('/')) return '$_backendOrigin$raw';
+  return raw;
+}
+
+double _toDouble(dynamic value, {double fallback = 0}) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? fallback;
+}
+
 /// Restaurant Model
 class Restaurant extends Equatable {
   final String id;
@@ -39,15 +59,18 @@ class Restaurant extends Equatable {
 
   factory Restaurant.fromJson(Map<String, dynamic> json) {
     return Restaurant(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      image: json['image'] ?? '',
-      cuisine: json['cuisine'] ?? '',
-      rating: (json['rating'] ?? 0).toDouble(),
-      deliveryTime: json['deliveryTime'] ?? '',
-      deliveryFee: json['deliveryFee'] ?? 'Free',
-      popular: json['popular'] ?? false,
-      priceRange: json['priceRange'] ?? '\$',
+      id: (json['id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      image: _normalizeImageUrl(json['image']),
+      cuisine: (json['cuisine'] ?? '').toString(),
+      rating: _toDouble(json['rating']),
+      deliveryTime:
+          (json['deliveryTime'] ?? json['delivery_time'] ?? '').toString(),
+      deliveryFee:
+          (json['deliveryFee'] ?? json['delivery_fee'] ?? 'Free').toString(),
+      popular: (json['popular'] ?? json['is_popular']) == true,
+      priceRange:
+          (json['priceRange'] ?? json['price_range'] ?? '\$').toString(),
     );
   }
 
@@ -100,14 +123,15 @@ class FoodItem extends Equatable {
 
   factory FoodItem.fromJson(Map<String, dynamic> json) {
     return FoodItem(
-      id: json['id'] ?? '',
-      restaurantId: json['restaurantId'] ?? '',
-      name: json['name'] ?? '',
-      description: json['description'] ?? '',
-      price: (json['price'] ?? 0).toDouble(),
-      image: json['image'] ?? '',
-      category: json['category'] ?? '',
-      popular: json['popular'] ?? false,
+      id: (json['id'] ?? '').toString(),
+      restaurantId:
+          (json['restaurantId'] ?? json['restaurant_id'] ?? '').toString(),
+      name: (json['name'] ?? '').toString(),
+      description: (json['description'] ?? '').toString(),
+      price: _toDouble(json['price']),
+      image: _normalizeImageUrl(json['image']),
+      category: (json['category'] ?? '').toString(),
+      popular: (json['popular'] ?? json['is_popular']) == true,
     );
   }
 
