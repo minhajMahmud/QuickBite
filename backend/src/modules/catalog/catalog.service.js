@@ -26,6 +26,7 @@ function toFoodItemModel(row) {
     image: row.image || '',
     category: row.category || 'Uncategorized',
     popular: Boolean(row.is_popular),
+    updatedAt: row.updated_at,
   };
 }
 

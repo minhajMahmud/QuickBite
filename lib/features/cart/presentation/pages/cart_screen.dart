@@ -327,9 +327,22 @@ class CartScreen extends ConsumerWidget {
                         width: double.infinity,
                         child: ElevatedButton(
                           onPressed: () {
+                            if (isGuest) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Please log in to continue to checkout.',
+                                  ),
+                                ),
+                              );
+                              context.push('/login');
+                              return;
+                            }
                             context.push('/checkout');
                           },
-                          child: const Text('Checkout'),
+                          child: Text(
+                            isGuest ? 'Sign in to Checkout' : 'Checkout',
+                          ),
                         ),
                       ),
                     ],

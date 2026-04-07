@@ -9,6 +9,7 @@ import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/data/services/api_client.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 import '../widgets/admin_sidebar.dart';
+import 'delivery_partner_details_screen.dart';
 
 class _AdminPageScaffold extends StatelessWidget {
   final String currentRoute;
@@ -1718,69 +1719,86 @@ class _DeliveryManagementScreenState
     final email = account['email']?.toString() ?? '-';
     final status = _statusOf(account);
     final color = _statusColor(status);
+    final partnerId = account['id']?.toString() ?? '';
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 2,
-      surfaceTintColor: Colors.transparent,
-      shadowColor: theme.shadowColor.withValues(alpha: 0.06),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(
-          color: theme.dividerColor.withValues(alpha: 0.14),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            height: 3,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  color.withValues(alpha: 0.95),
-                  color.withValues(alpha: 0.55),
-                ],
-              ),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => DeliveryPartnerDetailsScreen(
+              partnerId: partnerId,
+              partnerName: name,
+              partnerEmail: email,
+              currentStatus: status,
             ),
           ),
-          ListTile(
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            leading: CircleAvatar(
-              backgroundColor: color.withValues(alpha: 0.12),
-              child: Text(
-                name.isNotEmpty ? name[0].toUpperCase() : '?',
-                style: TextStyle(color: color, fontWeight: FontWeight.w700),
-              ),
-            ),
-            title: Text(
-              name,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text('$email • ${_statusLabel(status)}'),
-            ),
-            trailing: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        );
+      },
+      child: Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        elevation: 2,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: theme.shadowColor.withValues(alpha: 0.06),
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: theme.dividerColor.withValues(alpha: 0.14),
+          ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              height: 3,
               decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(999),
-                border: Border.all(color: color.withValues(alpha: 0.25)),
-              ),
-              child: Text(
-                _statusLabel(status),
-                style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w700,
+                gradient: LinearGradient(
+                  colors: [
+                    color.withValues(alpha: 0.95),
+                    color.withValues(alpha: 0.55),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              leading: CircleAvatar(
+                backgroundColor: color.withValues(alpha: 0.12),
+                child: Text(
+                  name.isNotEmpty ? name[0].toUpperCase() : '?',
+                  style: TextStyle(color: color, fontWeight: FontWeight.w700),
+                ),
+              ),
+              title: Text(
+                name,
+                style: theme.textTheme.titleMedium
+                    ?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('$email • ${_statusLabel(status)}'),
+              ),
+              trailing: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: color.withValues(alpha: 0.25)),
+                ),
+                child: Text(
+                  _statusLabel(status),
+                  style: TextStyle(
+                    color: color,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

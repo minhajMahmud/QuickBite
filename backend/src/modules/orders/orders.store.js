@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { pool } = require('../../config/db');
 
 function mapOrderRow(row) {
@@ -11,7 +12,10 @@ function mapOrderRow(row) {
     items: Array.isArray(row.items) ? row.items : [],
     totalAmount: Number(row.total_amount || 0),
     status: row.order_status,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status,
     createdAt: row.created_at,
+    updatedAt: row.updated_at,
   };
 }
 
@@ -54,12 +58,10 @@ async function createOrder(order) {
     const createdOrder = orderResult.rows[0];
 
     if (Array.isArray(order.items) && order.items.length > 0) {
-      let itemIndex = 0;
       for (const item of order.items) {
         const foodItemId = item.foodItemId || item.id || null;
         if (!foodItemId) continue;
 
-        itemIndex += 1;
         const quantity = Number(item.quantity || 1);
         const unitPrice = Number(item.unitPrice ?? item.price ?? 0);
         const itemTotal = Number(item.itemTotal ?? unitPrice * quantity);
@@ -79,7 +81,7 @@ async function createOrder(order) {
             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());
           `,
           [
-            `${order.id}-item-${itemIndex}`,
+            crypto.randomUUID(),
             order.id,
             foodItemId,
             quantity,
@@ -101,7 +103,10 @@ async function createOrder(order) {
           o.restaurant_id,
           o.total_amount,
           o.order_status,
+          o.payment_method,
+          o.payment_status,
           o.created_at,
+          o.updated_at,
           r.name AS restaurant_name
         FROM orders o
         JOIN restaurants r ON r.id = o.restaurant_id
@@ -131,7 +136,10 @@ async function listOrders() {
       o.restaurant_id,
       o.total_amount,
       o.order_status,
+      o.payment_method,
+      o.payment_status,
       o.created_at,
+      o.updated_at,
       r.name AS restaurant_name
     FROM orders o
     JOIN restaurants r ON r.id = o.restaurant_id
@@ -151,7 +159,10 @@ async function listOrdersByUser(userId) {
       o.restaurant_id,
       o.total_amount,
       o.order_status,
+      o.payment_method,
+      o.payment_status,
       o.created_at,
+      o.updated_at,
       r.name AS restaurant_name
     FROM orders o
     JOIN restaurants r ON r.id = o.restaurant_id
@@ -172,7 +183,10 @@ async function findOrderById(id) {
       o.restaurant_id,
       o.total_amount,
       o.order_status,
+      o.payment_method,
+      o.payment_status,
       o.created_at,
+      o.updated_at,
       r.name AS restaurant_name
     FROM orders o
     JOIN restaurants r ON r.id = o.restaurant_id
@@ -202,6 +216,25 @@ async function updateOrderStatus(id, status) {
   return findOrderById(id);
 }
 
+async function updateOrderPayment({ id, paymentMethod, paymentStatus }) {
+  const query = `
+    UPDATE orders
+    SET payment_method = $1,
+        payment_status = $2,
+        updated_at = NOW()
+    WHERE id = $3
+      AND deleted_at IS NULL
+    RETURNING id;
+  `;
+
+  const { rows } = await pool.query(query, [paymentMethod, paymentStatus, id]);
+  if (!rows[0]) {
+    return null;
+  }
+
+  return findOrderById(id);
+}
+
 async function canRestaurantManageOrder(orderId, ownerUserId) {
   const query = `
     SELECT 1
@@ -223,5 +256,6 @@ module.exports = {
   listOrdersByUser,
   findOrderById,
   updateOrderStatus,
+  updateOrderPayment,
   canRestaurantManageOrder,
 };

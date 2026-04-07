@@ -1,4 +1,5 @@
 import 'package:http/http.dart' as http;
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
@@ -526,6 +527,213 @@ class ApiClient {
         .whereType<Map>()
         .map((e) => Map<String, dynamic>.from(e))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> createOrder({
+    required String token,
+    required String restaurantId,
+    required List<Map<String, dynamic>> items,
+    required double totalAmount,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/orders'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'restaurantId': restaurantId,
+            'items': items,
+            'totalAmount': totalAmount,
+          }),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 201) {
+      throw Exception(data['message'] ?? 'Failed to create order');
+    }
+
+    final raw = data['order'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid create order response');
+  }
+
+  Future<Map<String, dynamic>> getMyOrderById({
+    required String token,
+    required String orderId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/orders/$orderId'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch order');
+    }
+
+    final raw = data['order'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid order response');
+  }
+
+  Future<Map<String, dynamic>> updateMyOrderPayment({
+    required String token,
+    required String orderId,
+    required String paymentMethod,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/orders/$orderId/payment'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'paymentMethod': paymentMethod}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update payment');
+    }
+
+    final raw = data['order'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid payment update response');
+  }
+
+  Stream<Map<String, dynamic>> streamMyOrderEvents({
+    required String token,
+    required String orderId,
+  }) {
+    final controller = StreamController<Map<String, dynamic>>();
+    final client = http.Client();
+    StreamSubscription<String>? subscription;
+
+    Future<void> connect() async {
+      try {
+        final request = http.Request(
+          'GET',
+          Uri.parse('$_baseUrl/orders/$orderId/events'),
+        );
+        request.headers['Accept'] = 'text/event-stream';
+        request.headers['Authorization'] = 'Bearer $token';
+
+        final response = await client.send(request);
+        if (response.statusCode != 200) {
+          final body = await response.stream.bytesToString();
+          try {
+            final data = jsonDecode(body) as Map<String, dynamic>;
+            controller.addError(
+              Exception(data['message'] ?? 'Failed to open order event stream'),
+            );
+          } catch (_) {
+            controller.addError(
+              Exception('Failed to open order event stream'),
+            );
+          }
+          await controller.close();
+          client.close();
+          return;
+        }
+
+        String buffer = '';
+
+        subscription = response.stream.transform(utf8.decoder).listen(
+          (chunk) {
+            buffer += chunk;
+
+            while (true) {
+              final splitIndex = buffer.indexOf('\n\n');
+              if (splitIndex < 0) {
+                break;
+              }
+
+              final block = buffer.substring(0, splitIndex);
+              buffer = buffer.substring(splitIndex + 2);
+
+              final lines = block.split('\n');
+              final payloadLines = <String>[];
+
+              for (final line in lines) {
+                if (line.startsWith('data:')) {
+                  payloadLines.add(line.substring(5).trim());
+                }
+              }
+
+              if (payloadLines.isEmpty) {
+                continue;
+              }
+
+              final payload = payloadLines.join('\n');
+              try {
+                final decoded = jsonDecode(payload);
+                if (decoded is Map<String, dynamic>) {
+                  controller.add(decoded);
+                }
+              } catch (_) {
+                // Ignore malformed payloads.
+              }
+            }
+          },
+          onError: (error) {
+            if (!controller.isClosed) {
+              controller.addError(error);
+            }
+          },
+          onDone: () async {
+            if (!controller.isClosed) {
+              await controller.close();
+            }
+            client.close();
+          },
+          cancelOnError: false,
+        );
+      } catch (error) {
+        if (!controller.isClosed) {
+          controller.addError(error);
+          await controller.close();
+        }
+        client.close();
+      }
+    }
+
+    controller.onCancel = () async {
+      await subscription?.cancel();
+      client.close();
+      if (!controller.isClosed) {
+        await controller.close();
+      }
+    };
+
+    connect();
+    return controller.stream;
   }
 
   Future<List<Map<String, dynamic>>> getAdminUsers({
@@ -1154,6 +1362,125 @@ class ApiClient {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to delete menu item');
+    }
+
+    return data;
+  }
+
+  /// Admin User Management Methods
+
+  /// List all users with optional filters (role, status)
+  /// GET /api/v1/admin/users?role=customer&status=active&limit=50&offset=0
+  Future<Map<String, dynamic>> getAdminUsersList({
+    required String token,
+    String? role,
+    String? status,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    final uri = Uri.parse('$_baseUrl/admin/users').replace(
+      queryParameters: {
+        if (role != null) 'role': role,
+        if (status != null) 'status': status,
+        'limit': limit.toString(),
+        'offset': offset.toString(),
+      },
+    );
+
+    final response = await http.get(
+      uri,
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch users list');
+    }
+
+    return data;
+  }
+
+  /// Get detailed user information including orders/delivery history
+  /// GET /api/v1/admin/users/:userId
+  Future<Map<String, dynamic>> getAdminUserDetails({
+    required String token,
+    required String userId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/admin/users/$userId'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch user details');
+    }
+
+    return data;
+  }
+
+  /// Update user status (ban/unban/activate/deactivate)
+  /// PATCH /api/v1/admin/users/:userId/status
+  /// status: 'active', 'inactive', or 'banned'
+  Future<Map<String, dynamic>> updateAdminUserStatus({
+    required String token,
+    required String userId,
+    required String status,
+  }) async {
+    final response = await http
+        .patch(
+          Uri.parse('$_baseUrl/admin/users/$userId/status'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'status': status}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update user status');
+    }
+
+    return data;
+  }
+
+  /// Get user statistics for admin dashboard
+  /// GET /api/v1/admin/users/statistics
+  Future<Map<String, dynamic>> getAdminUserStatistics({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/admin/users/statistics'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch user statistics');
     }
 
     return data;

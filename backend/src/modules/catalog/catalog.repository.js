@@ -65,6 +65,7 @@ async function listFoodItems(restaurantId = null) {
       COALESCE(fi.description, '') AS description,
       COALESCE(fi.price, 0)::float AS price,
       COALESCE(fi.image, '') AS image,
+      fi.updated_at,
       COALESCE(c.name, 'Uncategorized') AS category,
       COALESCE(fi.is_popular, FALSE) AS is_popular
     FROM food_items fi

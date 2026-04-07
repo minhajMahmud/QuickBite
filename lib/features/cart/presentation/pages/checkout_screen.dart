@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../config/theme/app_theme.dart';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
+import '../../../authentication/data/services/api_client.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 
 class CheckoutScreen extends ConsumerStatefulWidget {
@@ -15,21 +16,11 @@ class CheckoutScreen extends ConsumerStatefulWidget {
 }
 
 class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
-  bool _showPaymentOptions = false;
-  int _selectedMethod = 0;
   final TextEditingController _promoController = TextEditingController();
   double _discountAmount = 0;
   String? _appliedPromoCode;
   String? _promoFeedback;
-
-  final List<_PaymentMethod> _paymentMethods = const [
-    _PaymentMethod(label: 'Cash on delivery', suffix: ''),
-    _PaymentMethod(label: 'GCash', suffix: '****** 1234'),
-    _PaymentMethod(label: 'Paymaya', suffix: '****** 1234'),
-    _PaymentMethod(label: 'Paypal', suffix: '****** 1234'),
-    _PaymentMethod(label: 'MasterCard', suffix: '****** 1234'),
-    _PaymentMethod(label: 'Visa', suffix: '****** 1234'),
-  ];
+  bool _isPlacingOrder = false;
 
   @override
   void dispose() {
@@ -86,7 +77,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     required double deliveryFee,
     required double discount,
     required double total,
-    required String paymentMethod,
+    required String orderId,
   }) {
     return showDialog<void>(
       context: context,
@@ -107,7 +98,8 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   ),
                 ),
                 const Divider(height: 16),
-                Text('Payment: $paymentMethod'),
+                Text('Order ID: $orderId'),
+                const Text('Payment: Pending restaurant acceptance'),
                 Text('Subtotal: ₱${subtotal.toStringAsFixed(2)}'),
                 Text('Delivery: ₱${deliveryFee.toStringAsFixed(2)}'),
                 Text('Discount: -₱${discount.toStringAsFixed(2)}'),
@@ -208,97 +200,33 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             const SizedBox(height: 12),
             _sectionCard(
               context,
-              title: 'Payment Method',
+              title: 'Payment',
               child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  InkWell(
-                    onTap: () {
-                      setState(
-                          () => _showPaymentOptions = !_showPaymentOptions);
-                    },
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.account_balance_wallet_outlined,
-                              color: Color(0xFFFF0B72)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Text(
-                              _paymentMethods[_selectedMethod].label,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          Icon(_showPaymentOptions
-                              ? Icons.keyboard_arrow_up
-                              : Icons.keyboard_arrow_down),
-                        ],
-                      ),
-                    ),
-                  ),
-                  AnimatedCrossFade(
-                    duration: const Duration(milliseconds: 180),
-                    crossFadeState: _showPaymentOptions
-                        ? CrossFadeState.showSecond
-                        : CrossFadeState.showFirst,
-                    firstChild: const SizedBox.shrink(),
-                    secondChild: Container(
-                      margin: const EdgeInsets.only(top: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: theme.dividerColor.withOpacity(0.3),
+                  Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFF0B72).withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.account_balance_wallet_outlined,
+                          color: Color(0xFFFF0B72),
+                          size: 20,
                         ),
                       ),
-                      child: Column(
-                        children:
-                            List.generate(_paymentMethods.length, (index) {
-                          final method = _paymentMethods[index];
-                          final selected = index == _selectedMethod;
-                          return Column(
-                            children: [
-                              ListTile(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedMethod = index;
-                                    _showPaymentOptions = false;
-                                  });
-                                },
-                                leading: CircleAvatar(
-                                  backgroundColor: selected
-                                      ? const Color(0xFFFF0B72)
-                                          .withOpacity(0.12)
-                                      : theme.dividerColor.withOpacity(0.12),
-                                  child: Text(
-                                    method.label[0],
-                                    style: TextStyle(
-                                      color: selected
-                                          ? const Color(0xFFFF0B72)
-                                          : theme.textTheme.bodyMedium?.color,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(method.label),
-                                subtitle: method.suffix.isEmpty
-                                    ? null
-                                    : Text(method.suffix),
-                                trailing: selected
-                                    ? const Icon(Icons.check_circle,
-                                        color: Color(0xFFFF0B72))
-                                    : null,
-                              ),
-                              if (index != _paymentMethods.length - 1)
-                                Divider(
-                                  height: 1,
-                                  color: theme.dividerColor.withOpacity(0.2),
-                                ),
-                            ],
-                          );
-                        }),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Restaurant will first accept/reject your order.\nYou can choose Card or Cash on Delivery after acceptance.',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ],
               ),
@@ -448,37 +376,116 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             SizedBox(
               height: 48,
               child: ElevatedButton(
-                onPressed: cartItems.isEmpty
+                onPressed: cartItems.isEmpty || _isPlacingOrder
                     ? null
                     : () async {
-                        final trackingOrder = ref
-                            .read(ongoingOrdersProvider.notifier)
-                            .createOrderFromCart(
-                              cartItems: cartItems,
-                              total: discountedTotal,
-                            );
-
-                        await _showReceiptDialog(
-                          context: context,
-                          cartItems: cartItems,
-                          subtotal: totalPrice,
-                          deliveryFee: deliveryFee,
-                          discount: _discountAmount,
-                          total: discountedTotal,
-                          paymentMethod: _paymentMethods[_selectedMethod].label,
-                        );
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'Order placed with ${_paymentMethods[_selectedMethod].label}! 🎉',
+                        if (isGuest) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Please log in to place an order.'),
                             ),
-                          ),
-                        );
-                        ref.read(cartProvider.notifier).clearCart();
-                        context
-                            .go('/order-tracking?orderId=${trackingOrder.id}');
+                          );
+                          context.push('/login');
+                          return;
+                        }
+
+                        final token = ref.read(authProvider).token;
+                        if (token == null || token.isEmpty) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Authentication expired. Please log in again.',
+                              ),
+                            ),
+                          );
+                          context.push('/login');
+                          return;
+                        }
+
+                        final restaurantIds = cartItems
+                            .map((item) => item.food.restaurantId)
+                            .toSet();
+
+                        if (restaurantIds.length != 1) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Please keep items from one restaurant per order.',
+                              ),
+                            ),
+                          );
+                          return;
+                        }
+
+                        final restaurantId = restaurantIds.first;
+                        final orderItems = cartItems
+                            .map<Map<String, dynamic>>(
+                              (item) => {
+                                'foodItemId': item.food.id,
+                                'quantity': item.quantity,
+                                'unitPrice': item.food.price,
+                                'itemTotal': item.subtotal,
+                              },
+                            )
+                            .toList();
+
+                        setState(() => _isPlacingOrder = true);
+                        try {
+                          final createdOrder = await ApiClient().createOrder(
+                            token: token,
+                            restaurantId: restaurantId,
+                            items: orderItems,
+                            totalAmount: discountedTotal,
+                          );
+
+                          if (!mounted) return;
+                          final orderId = createdOrder['id']?.toString() ?? '';
+
+                          await _showReceiptDialog(
+                            context: context,
+                            cartItems: cartItems,
+                            subtotal: totalPrice,
+                            deliveryFee: deliveryFee,
+                            discount: _discountAmount,
+                            total: discountedTotal,
+                            orderId: orderId,
+                          );
+
+                          if (!mounted) return;
+
+                          ref.read(cartProvider.notifier).clearCart();
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Order sent to restaurant. Waiting for acceptance.',
+                              ),
+                            ),
+                          );
+
+                          if (orderId.isNotEmpty) {
+                            context.go('/order-tracking?orderId=$orderId');
+                          } else {
+                            context.go('/dashboard/orders');
+                          }
+                        } catch (e) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text(e.toString())),
+                          );
+                        } finally {
+                          if (mounted) {
+                            setState(() => _isPlacingOrder = false);
+                          }
+                        }
                       },
-                child: const Text('Place Order'),
+                child: _isPlacingOrder
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(isGuest ? 'Sign in to Place Order' : 'Place Order'),
               ),
             ),
           ],
@@ -564,11 +571,4 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
       ],
     );
   }
-}
-
-class _PaymentMethod {
-  final String label;
-  final String suffix;
-
-  const _PaymentMethod({required this.label, required this.suffix});
 }

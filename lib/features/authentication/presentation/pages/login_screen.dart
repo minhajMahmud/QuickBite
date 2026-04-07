@@ -263,6 +263,36 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
   }
 
+  InputDecoration _inputDecoration({
+    required String hintText,
+    required IconData prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    const borderColor = Color(0xFFE4E7EC);
+    const focusedColor = Color(0xFFFF8A00);
+
+    return InputDecoration(
+      hintText: hintText,
+      prefixIcon: Icon(prefixIcon, color: const Color(0xFF98A2B3)),
+      suffixIcon: suffixIcon,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: borderColor),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: borderColor),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: const BorderSide(color: focusedColor, width: 1.4),
+      ),
+      filled: true,
+      fillColor: Colors.white,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
@@ -271,9 +301,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         _isVerificationRequiredError(authState.error);
 
     return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: Colors.transparent,
+        backgroundColor: const Color(0xFFF7F8FA),
+        foregroundColor: const Color(0xFF1F2937),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -281,416 +313,475 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 20),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 470),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Food',
-                    style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.orange,
-                        ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Already a member? Sign in to your account',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                      color: Colors.grey[600],
-                    ),
-              ),
-              const SizedBox(height: 32),
-              Form(
-                key: _formKey,
-                child: Column(
-                  children: [
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: InputDecoration(
-                        hintText: 'Enter your email address',
-                        prefixIcon: const Icon(Icons.email_outlined),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.withOpacity(0.05),
-                      ),
-                      validator: (value) {
-                        if (value?.isEmpty ?? true) {
-                          return 'Please enter your email';
-                        }
-                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value!)) {
-                          return 'Please enter a valid email';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: !_showPassword,
-                      decoration: InputDecoration(
-                        hintText: 'Enter your password',
-                        prefixIcon: const Icon(Icons.lock_outline),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _showPassword
-                                ? Icons.visibility
-                                : Icons.visibility_off,
-                          ),
-                          onPressed: () {
-                            setState(() => _showPassword = !_showPassword);
-                          },
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        filled: true,
-                        fillColor: Colors.grey.withOpacity(0.05),
-                      ),
-                      validator: (value) {
-                        if (value?.isEmpty ?? true) {
-                          return 'Please enter your password';
-                        }
-                        return null;
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              if (isPendingApproval) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.amber.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.amber.withOpacity(0.5)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  Row(
                     children: [
-                      Row(
+                      Container(
+                        width: 42,
+                        height: 42,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFF1E6),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.delivery_dining_rounded,
+                          color: Color(0xFFFF8A00),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.hourglass_top_rounded,
-                            color: Colors.orange[800],
-                          ),
-                          const SizedBox(width: 8),
                           Text(
-                            'Account approval pending',
+                            'Welcome back',
                             style: Theme.of(context)
                                 .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
+                                .titleMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF101828),
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Your business account is waiting for admin confirmation before first access. We\'ll unlock login as soon as approval is complete.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.brown[700]),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          ElevatedButton.icon(
-                            onPressed: _showSupportDialog,
-                            icon: const Icon(Icons.support_agent),
-                            label: const Text('Contact support'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.orange,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                          OutlinedButton.icon(
-                            onPressed: () => context.push('/signup'),
-                            icon: const Icon(Icons.person_add_alt_1),
-                            label: const Text('Back to sign up'),
+                          Text(
+                            'QuickBite',
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: const Color(0xFF667085),
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                         ],
                       ),
                     ],
                   ),
-                ),
-              ],
-              if (isVerificationRequired) ...[
-                const SizedBox(height: 14),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.10),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.blue.withOpacity(0.45)),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Already a member? Sign in to your account',
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: const Color(0xFF667085),
+                        ),
                   ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.mark_email_unread_outlined,
-                            color: Colors.blue[800],
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Email verification required',
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.w700),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _hasRequestedVerificationCode
-                            ? 'Enter the 6-digit code sent to your email. Code expires in 24 hours.'
-                            : 'Request a verification code first, then enter it here to verify your email.',
-                        style: Theme.of(context)
-                            .textTheme
-                            .bodySmall
-                            ?.copyWith(color: Colors.blueGrey[800]),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!_hasRequestedVerificationCode) ...[
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton.icon(
-                            onPressed: (_isResendingVerification ||
-                                    _resendCooldownSeconds > 0)
-                                ? null
-                                : _requestVerificationCode,
-                            icon: _isResendingVerification
-                                ? const SizedBox(
-                                    height: 14,
-                                    width: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Icon(Icons.send),
-                            label: Text(
-                              _isResendingVerification
-                                  ? 'Sending code...'
-                                  : 'Send verification code',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x11000000),
+                          blurRadius: 18,
+                          offset: Offset(0, 8),
                         ),
-                      ] else ...[
-                        TextFormField(
-                          controller: _verificationCodeController,
-                          keyboardType: TextInputType.number,
-                          inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(6),
-                          ],
-                          decoration: InputDecoration(
-                            hintText: '000000',
-                            prefixIcon: const Icon(Icons.security),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.grey.withOpacity(0.05),
-                          ),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            fontSize: 24,
-                            letterSpacing: 8,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton.icon(
-                            onPressed: _isVerifyingCode ? null : _verifyCode,
-                            icon: _isVerifyingCode
-                                ? const SizedBox(
-                                    height: 14,
-                                    width: 14,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Icon(Icons.check_circle),
-                            label: Text(
-                              _isVerifyingCode ? 'Verifying...' : 'Verify Code',
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: OutlinedButton.icon(
-                                onPressed: (_isResendingVerification ||
-                                        _resendCooldownSeconds > 0)
-                                    ? null
-                                    : _requestVerificationCode,
-                                icon: _isResendingVerification
-                                    ? const SizedBox(
-                                        height: 14,
-                                        width: 14,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                          valueColor:
-                                              AlwaysStoppedAnimation<Color>(
-                                            Colors.blue,
-                                          ),
-                                        ),
-                                      )
-                                    : const Icon(Icons.send),
-                                label: Text(
-                                  _isResendingVerification
-                                      ? 'Sending...'
-                                      : 'Resend code',
+                      ],
+                    ),
+                    child: Column(
+                      children: [
+                        Form(
+                          key: _formKey,
+                          child: Column(
+                            children: [
+                              TextFormField(
+                                controller: _emailController,
+                                decoration: _inputDecoration(
+                                  hintText: 'Enter your email address',
+                                  prefixIcon: Icons.email_outlined,
                                 ),
+                                validator: (value) {
+                                  if (value?.isEmpty ?? true) {
+                                    return 'Please enter your email';
+                                  }
+                                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+')
+                                      .hasMatch(value!)) {
+                                    return 'Please enter a valid email';
+                                  }
+                                  return null;
+                                },
                               ),
-                            ),
-                            if (_resendCooldownSeconds > 0) ...[
-                              const SizedBox(width: 10),
-                              Text(
-                                '${(_resendCooldownSeconds ~/ 60).toString().padLeft(2, '0')}:${(_resendCooldownSeconds % 60).toString().padLeft(2, '0')}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .bodySmall
-                                    ?.copyWith(
-                                      color: Colors.blue,
-                                      fontWeight: FontWeight.w600,
+                              const SizedBox(height: 14),
+                              TextFormField(
+                                controller: _passwordController,
+                                obscureText: !_showPassword,
+                                decoration: _inputDecoration(
+                                  hintText: 'Enter your password',
+                                  prefixIcon: Icons.lock_outline,
+                                  suffixIcon: IconButton(
+                                    icon: Icon(
+                                      _showPassword
+                                          ? Icons.visibility
+                                          : Icons.visibility_off,
                                     ),
+                                    onPressed: () {
+                                      setState(
+                                          () => _showPassword = !_showPassword);
+                                    },
+                                  ),
+                                ),
+                                validator: (value) {
+                                  if (value?.isEmpty ?? true) {
+                                    return 'Please enter your password';
+                                  }
+                                  return null;
+                                },
                               ),
                             ],
-                          ],
+                          ),
+                        ),
+                        if (isPendingApproval) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.amber.withOpacity(0.5)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.hourglass_top_rounded,
+                                      color: Colors.orange[800],
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Account approval pending',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  'Your business account is waiting for admin confirmation before first access. We\'ll unlock login as soon as approval is complete.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: Colors.brown[700]),
+                                ),
+                                const SizedBox(height: 12),
+                                Wrap(
+                                  spacing: 8,
+                                  runSpacing: 8,
+                                  children: [
+                                    ElevatedButton.icon(
+                                      onPressed: _showSupportDialog,
+                                      icon: const Icon(Icons.support_agent),
+                                      label: const Text('Contact support'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.orange,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                    OutlinedButton.icon(
+                                      onPressed: () => context.push('/signup'),
+                                      icon: const Icon(Icons.person_add_alt_1),
+                                      label: const Text('Back to sign up'),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        if (isVerificationRequired) ...[
+                          const SizedBox(height: 14),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: Colors.blue.withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                  color: Colors.blue.withOpacity(0.45)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(
+                                      Icons.mark_email_unread_outlined,
+                                      color: Colors.blue[800],
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      'Email verification required',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                              fontWeight: FontWeight.w700),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _hasRequestedVerificationCode
+                                      ? 'Enter the 6-digit code sent to your email. Code expires in 24 hours.'
+                                      : 'Request a verification code first, then enter it here to verify your email.',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .bodySmall
+                                      ?.copyWith(color: Colors.blueGrey[800]),
+                                ),
+                                const SizedBox(height: 12),
+                                if (!_hasRequestedVerificationCode) ...[
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      onPressed: (_isResendingVerification ||
+                                              _resendCooldownSeconds > 0)
+                                          ? null
+                                          : _requestVerificationCode,
+                                      icon: _isResendingVerification
+                                          ? const SizedBox(
+                                              height: 14,
+                                              width: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(
+                                                  Colors.white,
+                                                ),
+                                              ),
+                                            )
+                                          : const Icon(Icons.send),
+                                      label: Text(
+                                        _isResendingVerification
+                                            ? 'Sending code...'
+                                            : 'Send verification code',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ] else ...[
+                                  TextFormField(
+                                    controller: _verificationCodeController,
+                                    keyboardType: TextInputType.number,
+                                    inputFormatters: [
+                                      FilteringTextInputFormatter.digitsOnly,
+                                      LengthLimitingTextInputFormatter(6),
+                                    ],
+                                    decoration: _inputDecoration(
+                                      hintText: '000000',
+                                      prefixIcon: Icons.security,
+                                    ),
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 24,
+                                      letterSpacing: 8,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  SizedBox(
+                                    width: double.infinity,
+                                    height: 48,
+                                    child: ElevatedButton.icon(
+                                      onPressed:
+                                          _isVerifyingCode ? null : _verifyCode,
+                                      icon: _isVerifyingCode
+                                          ? const SizedBox(
+                                              height: 14,
+                                              width: 14,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                valueColor:
+                                                    AlwaysStoppedAnimation<
+                                                        Color>(
+                                                  Colors.white,
+                                                ),
+                                              ),
+                                            )
+                                          : const Icon(Icons.check_circle),
+                                      label: Text(
+                                        _isVerifyingCode
+                                            ? 'Verifying...'
+                                            : 'Verify Code',
+                                      ),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Colors.blue,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: OutlinedButton.icon(
+                                          onPressed:
+                                              (_isResendingVerification ||
+                                                      _resendCooldownSeconds >
+                                                          0)
+                                                  ? null
+                                                  : _requestVerificationCode,
+                                          icon: _isResendingVerification
+                                              ? const SizedBox(
+                                                  height: 14,
+                                                  width: 14,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2,
+                                                    valueColor:
+                                                        AlwaysStoppedAnimation<
+                                                            Color>(
+                                                      Colors.blue,
+                                                    ),
+                                                  ),
+                                                )
+                                              : const Icon(Icons.send),
+                                          label: Text(
+                                            _isResendingVerification
+                                                ? 'Sending...'
+                                                : 'Resend code',
+                                          ),
+                                        ),
+                                      ),
+                                      if (_resendCooldownSeconds > 0) ...[
+                                        const SizedBox(width: 10),
+                                        Text(
+                                          '${(_resendCooldownSeconds ~/ 60).toString().padLeft(2, '0')}:${(_resendCooldownSeconds % 60).toString().padLeft(2, '0')}',
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .bodySmall
+                                              ?.copyWith(
+                                                color: Colors.blue,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: () =>
+                                context.push(AppRoutes.forgotPassword),
+                            child: const Text(
+                              'Forgot password',
+                              style: TextStyle(
+                                color: Color(0xFFB54708),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: ElevatedButton(
+                            onPressed:
+                                authState.isLoading ? null : _handleLogin,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFFF8A00),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                            ),
+                            child: authState.isLoading
+                                ? const SizedBox(
+                                    height: 24,
+                                    width: 24,
+                                    child: CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
+                                    ),
+                                  )
+                                : const Text(
+                                    'Sign in',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
                         ),
                       ],
-                    ],
-                  ),
-                ),
-              ],
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => context.push(AppRoutes.forgotPassword),
-                  child: Text(
-                    'Forgot password',
-                    style: TextStyle(
-                      color: Colors.orange[700],
-                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                height: 56,
-                child: ElevatedButton(
-                  onPressed: authState.isLoading ? null : _handleLogin,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: authState.isLoading
-                      ? const SizedBox(
-                          height: 24,
-                          width: 24,
-                          child: CircularProgressIndicator(
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Text(
-                          'Sign in',
+                  const SizedBox(height: 22),
+                  Row(
+                    children: [
+                      Expanded(child: Divider(color: Colors.grey[300])),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Text(
+                          'Sign in with',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.grey[600],
+                            fontSize: 12,
                           ),
                         ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Row(
-                children: [
-                  Expanded(child: Divider(color: Colors.grey[300])),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text(
-                      'Sign in with',
-                      style: TextStyle(
-                        color: Colors.grey[600],
-                        fontSize: 12,
+                      ),
+                      Expanded(child: Divider(color: Colors.grey[300])),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _SocialLoginButton(icon: '📘', onTap: () {}),
+                      const SizedBox(width: 16),
+                      _SocialLoginButton(icon: '🔍', onTap: () {}),
+                      const SizedBox(width: 16),
+                      _SocialLoginButton(icon: '𝕏', onTap: () {}),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  Center(
+                    child: GestureDetector(
+                      onTap: () => context.push(AppRoutes.signup),
+                      child: RichText(
+                        text: TextSpan(
+                          style: TextStyle(color: Colors.grey[600]),
+                          children: [
+                            const TextSpan(text: 'Don\'t have an account? '),
+                            TextSpan(
+                              text: 'Sign Up',
+                              style: TextStyle(
+                                color: Colors.orange[700],
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
-                  Expanded(child: Divider(color: Colors.grey[300])),
+                  const SizedBox(height: 28),
                 ],
               ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _SocialLoginButton(icon: '📘', onTap: () {}),
-                  const SizedBox(width: 16),
-                  _SocialLoginButton(icon: '🔍', onTap: () {}),
-                  const SizedBox(width: 16),
-                  _SocialLoginButton(icon: '𝕏', onTap: () {}),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: GestureDetector(
-                  onTap: () => context.push(AppRoutes.signup),
-                  child: RichText(
-                    text: TextSpan(
-                      style: TextStyle(color: Colors.grey[600]),
-                      children: [
-                        const TextSpan(text: 'Don\'t have an account? '),
-                        TextSpan(
-                          text: 'Sign Up',
-                          style: TextStyle(
-                            color: Colors.orange[700],
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 28),
-            ],
+            ),
           ),
         ),
       ),

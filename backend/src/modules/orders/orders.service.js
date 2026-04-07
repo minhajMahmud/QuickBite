@@ -1,6 +1,19 @@
 const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const ordersStore = require('./orders.store');
+const ordersEvents = require('./orders.events');
+
+const VALID_ORDER_STATUSES = new Set([
+  'pending',
+  'confirmed',
+  'preparing',
+  'ready',
+  'on_the_way',
+  'delivered',
+  'cancelled',
+]);
+
+const VALID_PAYMENT_METHODS = new Set(['cash', 'credit_card']);
 
 async function createOrder({ userId, restaurantId, items, totalAmount }) {
   if (!Array.isArray(items) || items.length === 0) {
@@ -21,7 +34,9 @@ async function createOrder({ userId, restaurantId, items, totalAmount }) {
     createdAt: new Date().toISOString(),
   };
 
-  return ordersStore.createOrder(order);
+  const created = await ordersStore.createOrder(order);
+  ordersEvents.emit('orderUpdated', created);
+  return created;
 }
 
 async function listOrdersForRole(user) {
@@ -33,6 +48,10 @@ async function listOrdersForRole(user) {
 }
 
 async function updateOrderStatus(orderId, status, user) {
+  if (!VALID_ORDER_STATUSES.has(status)) {
+    throw new ApiError(400, 'Invalid order status');
+  }
+
   const order = await ordersStore.findOrderById(orderId);
   if (!order) {
     throw new ApiError(404, 'Order not found');
@@ -54,6 +73,73 @@ async function updateOrderStatus(orderId, status, user) {
     throw new ApiError(404, 'Order not found');
   }
 
+  ordersEvents.emit('orderUpdated', updated);
+
+  return updated;
+}
+
+async function getOrderByIdForRole(orderId, user) {
+  const order = await ordersStore.findOrderById(orderId);
+  if (!order) {
+    throw new ApiError(404, 'Order not found');
+  }
+
+  if (user.role === 'admin') {
+    return order;
+  }
+
+  if (user.role === 'restaurant') {
+    const canManage = await ordersStore.canRestaurantManageOrder(orderId, user.sub);
+    if (!canManage) {
+      throw new ApiError(403, 'Forbidden: cannot access orders for other restaurants');
+    }
+    return order;
+  }
+
+  if (order.userId !== user.sub) {
+    throw new ApiError(403, 'Forbidden: cannot access other users orders');
+  }
+
+  return order;
+}
+
+async function updateOrderPayment(orderId, paymentMethod, user) {
+  const method = String(paymentMethod || '').trim().toLowerCase();
+  if (!VALID_PAYMENT_METHODS.has(method)) {
+    throw new ApiError(400, 'Invalid payment method. Use cash or credit_card');
+  }
+
+  const order = await ordersStore.findOrderById(orderId);
+  if (!order) {
+    throw new ApiError(404, 'Order not found');
+  }
+
+  if (order.userId !== user.sub) {
+    throw new ApiError(403, 'Forbidden: cannot update payment for another user order');
+  }
+
+  if (order.status === 'cancelled') {
+    throw new ApiError(400, 'Cannot pay for a cancelled order');
+  }
+
+  if (order.status !== 'confirmed') {
+    throw new ApiError(400, 'Payment is available after restaurant accepts your order');
+  }
+
+  const paymentStatus = method === 'cash' ? 'pending' : 'completed';
+
+  const updated = await ordersStore.updateOrderPayment({
+    id: orderId,
+    paymentMethod: method,
+    paymentStatus,
+  });
+
+  if (!updated) {
+    throw new ApiError(404, 'Order not found');
+  }
+
+  ordersEvents.emit('orderUpdated', updated);
+
   return updated;
 }
 
@@ -61,4 +147,6 @@ module.exports = {
   createOrder,
   listOrdersForRole,
   updateOrderStatus,
+  getOrderByIdForRole,
+  updateOrderPayment,
 };

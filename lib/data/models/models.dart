@@ -15,6 +15,20 @@ String _normalizeImageUrl(dynamic value) {
   return raw;
 }
 
+String _appendImageVersion(String imageUrl, dynamic version) {
+  final rawVersion = version?.toString().trim() ?? '';
+  if (imageUrl.isEmpty || rawVersion.isEmpty) return imageUrl;
+
+  final uri = Uri.tryParse(imageUrl);
+  if (uri == null) {
+    return '$imageUrl${imageUrl.contains('?') ? '&' : '?'}v=${Uri.encodeQueryComponent(rawVersion)}';
+  }
+
+  final nextQuery = Map<String, String>.from(uri.queryParameters);
+  nextQuery['v'] = rawVersion;
+  return uri.replace(queryParameters: nextQuery).toString();
+}
+
 double _toDouble(dynamic value, {double fallback = 0}) {
   if (value is num) return value.toDouble();
   return double.tryParse(value?.toString() ?? '') ?? fallback;
@@ -97,6 +111,7 @@ class FoodItem extends Equatable {
   final String image;
   final String category;
   final bool popular;
+  final String? updatedAt;
 
   const FoodItem({
     required this.id,
@@ -107,6 +122,7 @@ class FoodItem extends Equatable {
     required this.image,
     required this.category,
     required this.popular,
+    this.updatedAt,
   });
 
   @override
@@ -119,6 +135,7 @@ class FoodItem extends Equatable {
         image,
         category,
         popular,
+        updatedAt,
       ];
 
   factory FoodItem.fromJson(Map<String, dynamic> json) {
@@ -129,9 +146,13 @@ class FoodItem extends Equatable {
       name: (json['name'] ?? '').toString(),
       description: (json['description'] ?? '').toString(),
       price: _toDouble(json['price']),
-      image: _normalizeImageUrl(json['image']),
+      image: _appendImageVersion(
+        _normalizeImageUrl(json['image']),
+        json['updatedAt'] ?? json['updated_at'],
+      ),
       category: (json['category'] ?? '').toString(),
       popular: (json['popular'] ?? json['is_popular']) == true,
+      updatedAt: (json['updatedAt'] ?? json['updated_at'])?.toString(),
     );
   }
 
@@ -144,6 +165,7 @@ class FoodItem extends Equatable {
         'image': image,
         'category': category,
         'popular': popular,
+        'updatedAt': updatedAt,
       };
 }
 

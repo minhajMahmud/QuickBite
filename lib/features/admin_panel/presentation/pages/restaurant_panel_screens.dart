@@ -9,6 +9,7 @@ import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 
 import '../providers/restaurant_panel_provider.dart';
+import 'customer_order_details_screen.dart';
 
 final ValueNotifier<bool> _restaurantSidebarCollapsed =
     ValueNotifier<bool>(false);
