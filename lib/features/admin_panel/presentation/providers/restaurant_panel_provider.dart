@@ -106,6 +106,9 @@ class RestaurantMenuCategory {
 class RestaurantPanelOrder {
   final String id;
   final String customerName;
+  final String? deliveryPartnerName;
+  final String? deliveryPartnerEmail;
+  final String? deliveryPartnerPhone;
   final List<String> items;
   final String address;
   final String timeAgo;
@@ -115,6 +118,9 @@ class RestaurantPanelOrder {
   const RestaurantPanelOrder({
     required this.id,
     required this.customerName,
+    this.deliveryPartnerName,
+    this.deliveryPartnerEmail,
+    this.deliveryPartnerPhone,
     required this.items,
     required this.address,
     required this.timeAgo,
@@ -125,6 +131,9 @@ class RestaurantPanelOrder {
   RestaurantPanelOrder copyWith({
     String? id,
     String? customerName,
+    String? deliveryPartnerName,
+    String? deliveryPartnerEmail,
+    String? deliveryPartnerPhone,
     List<String>? items,
     String? address,
     String? timeAgo,
@@ -134,6 +143,9 @@ class RestaurantPanelOrder {
     return RestaurantPanelOrder(
       id: id ?? this.id,
       customerName: customerName ?? this.customerName,
+      deliveryPartnerName: deliveryPartnerName ?? this.deliveryPartnerName,
+      deliveryPartnerEmail: deliveryPartnerEmail ?? this.deliveryPartnerEmail,
+      deliveryPartnerPhone: deliveryPartnerPhone ?? this.deliveryPartnerPhone,
       items: items ?? this.items,
       address: address ?? this.address,
       timeAgo: timeAgo ?? this.timeAgo,
@@ -141,6 +153,26 @@ class RestaurantPanelOrder {
       status: status ?? this.status,
     );
   }
+}
+
+class AvailableDeliveryPartner {
+  final String id;
+  final String name;
+  final String email;
+  final String phone;
+  final double rating;
+  final int totalDeliveries;
+  final String vehicleType;
+
+  const AvailableDeliveryPartner({
+    required this.id,
+    required this.name,
+    required this.email,
+    required this.phone,
+    required this.rating,
+    required this.totalDeliveries,
+    required this.vehicleType,
+  });
 }
 
 class RestaurantPanelState {
@@ -378,6 +410,9 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
     return RestaurantPanelOrder(
       id: row['id']?.toString() ?? '',
       customerName: row['customer_name']?.toString() ?? 'Customer',
+      deliveryPartnerName: row['delivery_partner_name']?.toString(),
+      deliveryPartnerEmail: row['delivery_partner_email']?.toString(),
+      deliveryPartnerPhone: row['delivery_partner_phone']?.toString(),
       items: items,
       address: 'Address not provided',
       timeAgo: timeAgo,
@@ -549,6 +584,64 @@ class RestaurantPanelNotifier extends StateNotifier<RestaurantPanelState> {
               .toList(),
         );
       }
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+    }
+  }
+
+  Future<List<AvailableDeliveryPartner>> getAvailableDeliveryPartners() async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return const [];
+    }
+
+    try {
+      final rows = await _apiClient.getRestaurantAvailableDeliveryPartners(
+        token: _authToken!,
+      );
+
+      return rows
+          .map(
+            (row) => AvailableDeliveryPartner(
+              id: row['id']?.toString() ?? '',
+              name: row['name']?.toString() ?? 'Delivery Partner',
+              email: row['email']?.toString() ?? '-',
+              phone: row['phone']?.toString() ?? '-',
+              rating: _toDouble(row['rating']),
+              totalDeliveries:
+                  int.tryParse(row['totalDeliveries']?.toString() ?? '0') ?? 0,
+              vehicleType: row['vehicleType']?.toString() ?? 'Vehicle',
+            ),
+          )
+          .where((partner) => partner.id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      _lastBackendError = e.toString().replaceAll('Exception: ', '');
+      return const [];
+    }
+  }
+
+  Future<void> assignDeliveryPartnerAndAcceptOrder({
+    required String orderId,
+    required String deliveryPartnerId,
+  }) async {
+    _lastBackendError = null;
+
+    if (!isBackendAvailable) {
+      _lastBackendError = 'Authentication token missing. Please login again.';
+      return;
+    }
+
+    try {
+      await _apiClient.assignRestaurantOrderDeliveryPartner(
+        token: _authToken!,
+        orderId: orderId,
+        deliveryPartnerId: deliveryPartnerId,
+      );
+
+      await hydrateFromBackend();
     } catch (e) {
       _lastBackendError = e.toString().replaceAll('Exception: ', '');
     }

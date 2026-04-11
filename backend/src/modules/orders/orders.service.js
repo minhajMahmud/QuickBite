@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const ordersStore = require('./orders.store');
 const ordersEvents = require('./orders.events');
+const deliveryRequestsStore = require('../delivery-requests/deliveryRequests.store');
 
 const VALID_ORDER_STATUSES = new Set([
   'pending',
@@ -73,9 +74,33 @@ async function updateOrderStatus(orderId, status, user) {
     throw new ApiError(404, 'Order not found');
   }
 
+  if (status === 'confirmed') {
+    await deliveryRequestsStore.createRequestsForOrder(orderId);
+  }
+
   ordersEvents.emit('orderUpdated', updated);
 
   return updated;
+}
+
+async function _attachDeliveryDetails(order) {
+  if (!order) return order;
+
+  const deliveryRequest = await deliveryRequestsStore.getAcceptedRequestForOrder(order.id);
+  if (!deliveryRequest) {
+    return order;
+  }
+
+  return {
+    ...order,
+    deliveryPartner: deliveryRequest.deliveryPartner
+      ? {
+          ...deliveryRequest.deliveryPartner,
+          requestStatus: deliveryRequest.status,
+        }
+      : null,
+    deliveryRequest,
+  };
 }
 
 async function getOrderByIdForRole(orderId, user) {
@@ -85,7 +110,7 @@ async function getOrderByIdForRole(orderId, user) {
   }
 
   if (user.role === 'admin') {
-    return order;
+    return _attachDeliveryDetails(order);
   }
 
   if (user.role === 'restaurant') {
@@ -93,14 +118,14 @@ async function getOrderByIdForRole(orderId, user) {
     if (!canManage) {
       throw new ApiError(403, 'Forbidden: cannot access orders for other restaurants');
     }
-    return order;
+    return _attachDeliveryDetails(order);
   }
 
   if (order.userId !== user.sub) {
     throw new ApiError(403, 'Forbidden: cannot access other users orders');
   }
 
-  return order;
+  return _attachDeliveryDetails(order);
 }
 
 async function updateOrderPayment(orderId, paymentMethod, user) {

@@ -9,7 +9,6 @@ import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
 
 import '../providers/restaurant_panel_provider.dart';
-import 'customer_order_details_screen.dart';
 
 final ValueNotifier<bool> _restaurantSidebarCollapsed =
     ValueNotifier<bool>(false);
@@ -94,9 +93,18 @@ class RestaurantOverviewScreen extends ConsumerWidget {
                           .map(
                             (order) => _CompactOrderCard(
                               order: order,
-                              onAccept: () => ref
-                                  .read(restaurantPanelProvider.notifier)
-                                  .updateOrderStatus(order.id, 'accepted'),
+                              onAccept: () {
+                                ScaffoldMessenger.of(context)
+                                  ..hideCurrentSnackBar()
+                                  ..showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Open Orders to select an available delivery partner before accepting.',
+                                      ),
+                                    ),
+                                  );
+                                context.go('/admin/restaurant-panel/orders');
+                              },
                               onReject: () => ref
                                   .read(restaurantPanelProvider.notifier)
                                   .updateOrderStatus(order.id, 'rejected'),
@@ -2112,6 +2120,25 @@ class _ActiveOrderRow extends StatelessWidget {
                 order.items.join(', '),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if ((order.deliveryPartnerName ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'Assigned: ${order.deliveryPartnerName}',
+                    style: const TextStyle(
+                      color: Color(0xFF2563EB),
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
             ],
           );
 
@@ -2220,6 +2247,39 @@ class _OrderManagementCard extends ConsumerWidget {
                 '📍 ${order.address} · ${order.timeAgo}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if ((order.deliveryPartnerName ?? '').trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2563EB).withOpacity(0.10),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(
+                          color: const Color(0xFF2563EB).withOpacity(0.25),
+                        ),
+                      ),
+                      child: Text(
+                        'Partner: ${order.deliveryPartnerName}',
+                        style: const TextStyle(
+                          color: Color(0xFF1D4ED8),
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    if ((order.deliveryPartnerPhone ?? '').trim().isNotEmpty)
+                      Text(
+                        '☎ ${order.deliveryPartnerPhone}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                  ],
+                ),
+              ],
             ],
           );
 
@@ -2233,7 +2293,34 @@ class _OrderManagementCard extends ConsumerWidget {
 
           final actions = _OrderActions(
             status: order.status,
-            onAccept: () => notifier.updateOrderStatus(order.id, 'accepted'),
+            onAccept: () async {
+              final selectedPartner = await _pickDeliveryPartner(context, ref);
+              if (selectedPartner == null) {
+                return;
+              }
+
+              await notifier.assignDeliveryPartnerAndAcceptOrder(
+                orderId: order.id,
+                deliveryPartnerId: selectedPartner.id,
+              );
+
+              if (!context.mounted) return;
+
+              final error = notifier.lastBackendError;
+              ScaffoldMessenger.of(context)
+                ..hideCurrentSnackBar()
+                ..showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      error == null
+                          ? 'Assigned ${selectedPartner.name} and accepted order.'
+                          : error,
+                    ),
+                    backgroundColor:
+                        error == null ? const Color(0xFF1FB57A) : null,
+                  ),
+                );
+            },
             onReject: () => notifier.updateOrderStatus(order.id, 'rejected'),
             onPreparing: () =>
                 notifier.updateOrderStatus(order.id, 'preparing'),
@@ -2280,6 +2367,79 @@ class _OrderManagementCard extends ConsumerWidget {
           );
         },
       ),
+    );
+  }
+
+  Future<AvailableDeliveryPartner?> _pickDeliveryPartner(
+    BuildContext context,
+    WidgetRef ref,
+  ) async {
+    final notifier = ref.read(restaurantPanelProvider.notifier);
+    final partners = await notifier.getAvailableDeliveryPartners();
+
+    if (!context.mounted) return null;
+
+    if (partners.isEmpty) {
+      final errorMessage = notifier.lastBackendError ??
+          'No available delivery partners found right now.';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(errorMessage)));
+      return null;
+    }
+
+    AvailableDeliveryPartner? selected = partners.first;
+
+    return showDialog<AvailableDeliveryPartner>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setModalState) {
+            return AlertDialog(
+              title: const Text('Select Delivery Partner'),
+              content: SizedBox(
+                width: 460,
+                child: DropdownButtonFormField<String>(
+                  value: selected?.id,
+                  decoration: const InputDecoration(
+                    labelText: 'Available delivery partners',
+                  ),
+                  items: partners
+                      .map(
+                        (partner) => DropdownMenuItem<String>(
+                          value: partner.id,
+                          child: Text(
+                            '${partner.name} • ${partner.vehicleType} • ⭐ ${partner.rating.toStringAsFixed(1)}',
+                          ),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value == null) return;
+                    final next = partners.firstWhere(
+                      (partner) => partner.id == value,
+                      orElse: () => partners.first,
+                    );
+                    setModalState(() => selected = next);
+                  },
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: selected == null
+                      ? null
+                      : () => Navigator.pop(dialogContext, selected),
+                  child: const Text('Assign'),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

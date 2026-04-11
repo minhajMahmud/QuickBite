@@ -1,4 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import '../../../authentication/data/models/auth_model.dart';
+import '../../../authentication/data/services/api_client.dart';
+import '../../../authentication/presentation/providers/auth_provider.dart';
 
 /// Delivery Partner Profile Data
 class DeliveryPartnerProfile {
@@ -120,11 +126,43 @@ class EarningRecord {
   });
 }
 
+class IncomingDeliveryRequest {
+  final String id;
+  final String orderId;
+  final String status;
+  final String restaurantName;
+  final String customerName;
+  final String customerPhone;
+  final String customerEmail;
+  final String customerAddress;
+  final double totalAmount;
+  final double deliveryFee;
+  final DateTime? estimatedDeliveryTime;
+  final DateTime createdAt;
+
+  const IncomingDeliveryRequest({
+    required this.id,
+    required this.orderId,
+    required this.status,
+    required this.restaurantName,
+    required this.customerName,
+    required this.customerPhone,
+    required this.customerEmail,
+    required this.customerAddress,
+    required this.totalAmount,
+    required this.deliveryFee,
+    required this.estimatedDeliveryTime,
+    required this.createdAt,
+  });
+}
+
 /// Delivery Panel State
 class DeliveryPanelState {
   final DeliveryPartnerProfile profile;
   final List<ActiveDelivery> activeDeliveries;
+  final List<IncomingDeliveryRequest> incomingRequests;
   final List<EarningRecord> earnings;
+  final List<MapEntry<String, double>> weeklyEarningsBreakdown;
   final double totalEarningsToday;
   final double weeklyEarnings;
   final int totalDeliveriesToday;
@@ -136,7 +174,9 @@ class DeliveryPanelState {
   const DeliveryPanelState({
     required this.profile,
     required this.activeDeliveries,
+    required this.incomingRequests,
     required this.earnings,
+    required this.weeklyEarningsBreakdown,
     required this.totalEarningsToday,
     required this.weeklyEarnings,
     required this.totalDeliveriesToday,
@@ -149,22 +189,32 @@ class DeliveryPanelState {
   DeliveryPanelState.initial()
       : this(
           profile: DeliveryPartnerProfile(
-            id: 'dp_001',
-            name: 'Alex Johnson',
-            email: 'alex@quickbite.com',
-            phone: '(555) 123-4567',
-            rating: 4.9,
-            totalDeliveries: 342,
-            isActive: true,
-            vehicleType: 'Motorcycle',
-            licensePlate: 'XY-123-ZA',
+            id: '',
+            name: 'Delivery Partner',
+            email: '-',
+            phone: '-',
+            rating: 0,
+            totalDeliveries: 0,
+            isActive: false,
+            vehicleType: '-',
+            licensePlate: '-',
           ),
           activeDeliveries: const [],
+          incomingRequests: const [],
           earnings: const [],
-          totalEarningsToday: 78.50,
-          weeklyEarnings: 445.75,
-          totalDeliveriesToday: 6,
-          notificationsEnabled: true,
+          weeklyEarningsBreakdown: const [
+            MapEntry('Mon', 0),
+            MapEntry('Tue', 0),
+            MapEntry('Wed', 0),
+            MapEntry('Thu', 0),
+            MapEntry('Fri', 0),
+            MapEntry('Sat', 0),
+            MapEntry('Sun', 0),
+          ],
+          totalEarningsToday: 0,
+          weeklyEarnings: 0,
+          totalDeliveriesToday: 0,
+          notificationsEnabled: false,
           autoAcceptOrders: false,
           isLoading: false,
           error: null,
@@ -173,7 +223,9 @@ class DeliveryPanelState {
   DeliveryPanelState copyWith({
     DeliveryPartnerProfile? profile,
     List<ActiveDelivery>? activeDeliveries,
+    List<IncomingDeliveryRequest>? incomingRequests,
     List<EarningRecord>? earnings,
+    List<MapEntry<String, double>>? weeklyEarningsBreakdown,
     double? totalEarningsToday,
     double? weeklyEarnings,
     int? totalDeliveriesToday,
@@ -185,7 +237,10 @@ class DeliveryPanelState {
     return DeliveryPanelState(
       profile: profile ?? this.profile,
       activeDeliveries: activeDeliveries ?? this.activeDeliveries,
+      incomingRequests: incomingRequests ?? this.incomingRequests,
       earnings: earnings ?? this.earnings,
+      weeklyEarningsBreakdown:
+          weeklyEarningsBreakdown ?? this.weeklyEarningsBreakdown,
       totalEarningsToday: totalEarningsToday ?? this.totalEarningsToday,
       weeklyEarnings: weeklyEarnings ?? this.weeklyEarnings,
       totalDeliveriesToday: totalDeliveriesToday ?? this.totalDeliveriesToday,
@@ -199,7 +254,260 @@ class DeliveryPanelState {
 
 /// Delivery Panel Notifier
 class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
-  DeliveryPanelNotifier() : super(DeliveryPanelState.initial());
+  final ApiClient _apiClient;
+  String? _currentToken;
+
+  DeliveryPanelNotifier({ApiClient? apiClient})
+      : _apiClient = apiClient ?? ApiClient(),
+        super(DeliveryPanelState.initial());
+
+  double _asDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    return double.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  DateTime? _parseDate(dynamic value) {
+    if (value is DateTime) return value;
+    return DateTime.tryParse(value?.toString() ?? '');
+  }
+
+  String _customerLabel(Map<String, dynamic> order) {
+    final rawUserId = order['userId']?.toString() ?? '';
+    if (rawUserId.isEmpty) return 'Customer';
+    final shortId =
+        rawUserId.length > 6 ? rawUserId.substring(0, 6) : rawUserId;
+    return 'Customer $shortId';
+  }
+
+  DeliveryPartnerProfile _profileFromJson(
+    Map<String, dynamic> data, {
+    AuthUser? fallbackUser,
+  }) {
+    return DeliveryPartnerProfile(
+      id: data['id']?.toString() ?? fallbackUser?.id ?? state.profile.id,
+      name:
+          data['name']?.toString() ?? fallbackUser?.name ?? state.profile.name,
+      email: data['email']?.toString() ??
+          fallbackUser?.email ??
+          state.profile.email,
+      phone: data['phone']?.toString() ??
+          fallbackUser?.phone ??
+          state.profile.phone,
+      rating: _asDouble(data['rating'] ?? state.profile.rating),
+      totalDeliveries: _asInt(
+        data['totalDeliveries'] ??
+            data['total_orders'] ??
+            state.profile.totalDeliveries,
+      ),
+      isActive: data['is_active'] == true || data['status'] == 'active',
+      vehicleType:
+          data['vehicle_type']?.toString() ?? state.profile.vehicleType,
+      licensePlate:
+          data['vehicle_number']?.toString() ?? state.profile.licensePlate,
+    );
+  }
+
+  List<ActiveDelivery> _buildActiveDeliveries(
+      List<Map<String, dynamic>> orders) {
+    return orders
+        .where((order) {
+          final status = order['status']?.toString().toLowerCase() ?? '';
+          return status != 'delivered' && status != 'cancelled';
+        })
+        .map((order) {
+          final nestedOrder = order['order'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(order['order'] as Map)
+              : <String, dynamic>{};
+          final status = order['status']?.toString() ?? 'confirmed';
+          return ActiveDelivery(
+            id: order['id']?.toString() ?? '',
+            restaurantName: order['restaurantName']?.toString() ??
+                nestedOrder['restaurantName']?.toString() ??
+                'Restaurant',
+            customerName: order['customerName']?.toString() ??
+                nestedOrder['customerName']?.toString() ??
+                _customerLabel(order),
+            customerAddress: order['customerAddress']?.toString() ??
+                nestedOrder['customerAddress']?.toString() ??
+                'N/A',
+            estimatedEarning: _asDouble(order['estimatedEarning'] ??
+                order['deliveryFee'] ??
+                nestedOrder['deliveryFee'] ??
+                nestedOrder['totalAmount'] ??
+                order['totalAmount'] ??
+                order['total_amount']),
+            pickupLocation: order['pickupLocation']?.toString() ??
+                nestedOrder['pickupLocation']?.toString() ??
+                order['restaurantName']?.toString() ??
+                nestedOrder['restaurantName']?.toString() ??
+                'Pickup location',
+            dropLocation: order['dropLocation']?.toString() ??
+                nestedOrder['dropLocation']?.toString() ??
+                order['customerAddress']?.toString() ??
+                nestedOrder['customerAddress']?.toString() ??
+                'Drop-off location',
+            status: status,
+            otp: order['otp']?.toString(),
+            createdAt: _parseDate(order['createdAt'] ??
+                    order['created_at'] ??
+                    nestedOrder['createdAt'] ??
+                    nestedOrder['created_at']) ??
+                DateTime.now(),
+          );
+        })
+        .where((delivery) => delivery.id.isNotEmpty)
+        .toList();
+  }
+
+  List<IncomingDeliveryRequest> _buildIncomingRequests(
+      List<Map<String, dynamic>> requests) {
+    return requests
+        .map((request) {
+          final order = request['order'] is Map<String, dynamic>
+              ? Map<String, dynamic>.from(request['order'] as Map)
+              : <String, dynamic>{};
+
+          return IncomingDeliveryRequest(
+            id: request['id']?.toString() ?? '',
+            orderId:
+                request['orderId']?.toString() ?? order['id']?.toString() ?? '',
+            status: request['status']?.toString() ?? 'pending',
+            restaurantName: order['restaurantName']?.toString() ?? 'Restaurant',
+            customerName: order['customerName']?.toString() ?? 'Customer',
+            customerPhone: order['customerPhone']?.toString() ?? '-',
+            customerEmail: order['customerEmail']?.toString() ?? '-',
+            customerAddress: order['customerAddress']?.toString() ?? '-',
+            totalAmount: _asDouble(order['totalAmount']),
+            deliveryFee: _asDouble(order['deliveryFee']),
+            estimatedDeliveryTime: _parseDate(order['estimatedDeliveryTime']),
+            createdAt: _parseDate(request['createdAt']) ?? DateTime.now(),
+          );
+        })
+        .where((request) => request.id.isNotEmpty)
+        .toList();
+  }
+
+  List<MapEntry<String, double>> _buildWeeklyBreakdown(
+    List<EarningRecord> earnings,
+  ) {
+    const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final totals = <String, double>{
+      for (final label in weekdayLabels) label: 0
+    };
+
+    for (final record in earnings) {
+      final label = weekdayLabels[record.date.weekday - 1];
+      totals[label] = (totals[label] ?? 0) + record.amount;
+    }
+
+    return weekdayLabels
+        .map((label) => MapEntry(label, totals[label] ?? 0))
+        .toList();
+  }
+
+  Future<void> loadFromBackend({
+    required String token,
+    AuthUser? fallbackUser,
+  }) async {
+    _currentToken = token;
+    state = state.copyWith(isLoading: true, error: null);
+
+    try {
+      final dashboardResponse =
+          await _apiClient.getMyDeliveryDashboard(token: token);
+      final data = dashboardResponse['data'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(dashboardResponse['data'] as Map)
+          : <String, dynamic>{};
+
+      final profileData = data['profile'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(data['profile'] as Map)
+          : <String, dynamic>{};
+
+      final summaryData = data['summary'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(data['summary'] as Map)
+          : <String, dynamic>{};
+
+      final metricsData = data['metrics'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(data['metrics'] as Map)
+          : <String, dynamic>{};
+
+      final activeDeliveriesRaw = data['activeDeliveries'];
+      final activeOrders = activeDeliveriesRaw is List
+          ? activeDeliveriesRaw
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final incomingRaw = data['incomingRequests'];
+      final incomingRequests = incomingRaw is List
+          ? incomingRaw
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+          : <Map<String, dynamic>>[];
+
+      final earningsRaw = data['earnings'];
+      final earnings = earningsRaw is List
+          ? earningsRaw
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .map(
+                (item) => EarningRecord(
+                  id: item['id']?.toString() ?? '',
+                  deliveryId: item['deliveryId']?.toString() ??
+                      item['id']?.toString() ??
+                      '',
+                  amount: _asDouble(item['amount']),
+                  date: _parseDate(item['date']) ?? DateTime.now(),
+                  status: item['status']?.toString() ?? 'completed',
+                ),
+              )
+              .where((record) => record.id.isNotEmpty)
+              .toList()
+          : <EarningRecord>[];
+
+      final weeklyRaw = data['weeklyEarningsBreakdown'];
+      final weeklyBreakdown = weeklyRaw is List
+          ? weeklyRaw
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .map((item) => MapEntry(
+                    item['day']?.toString() ?? '',
+                    _asDouble(item['amount']),
+                  ))
+              .where((entry) => entry.key.isNotEmpty)
+              .toList()
+          : _buildWeeklyBreakdown(earnings);
+
+      state = state.copyWith(
+        profile: _profileFromJson(profileData, fallbackUser: fallbackUser),
+        activeDeliveries: _buildActiveDeliveries(activeOrders),
+        incomingRequests: _buildIncomingRequests(incomingRequests),
+        earnings: earnings,
+        weeklyEarningsBreakdown: weeklyBreakdown,
+        totalEarningsToday: _asDouble(metricsData['totalEarningsToday'] ?? 0),
+        weeklyEarnings: _asDouble(metricsData['weeklyEarnings'] ?? 0),
+        totalDeliveriesToday: _asInt(metricsData['totalDeliveriesToday'] ?? 0),
+        isLoading: false,
+        error: summaryData['totalDeliveries'] == null &&
+                activeOrders.isEmpty &&
+                earnings.isEmpty
+            ? 'No delivery dashboard data returned by the backend.'
+            : null,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
+    }
+  }
 
   /// Load active deliveries
   Future<void> loadActiveDeliveries() async {
@@ -246,6 +554,45 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
     }
   }
 
+  Future<void> acceptIncomingRequest(String requestId) async {
+    final token = _currentToken;
+    if (token == null || token.isEmpty) {
+      state = state.copyWith(error: 'Authentication required');
+      return;
+    }
+
+    try {
+      await _apiClient.acceptDeliveryRequest(
+          token: token, requestId: requestId);
+      await loadFromBackend(token: token);
+    } catch (e) {
+      state = state.copyWith(
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
+    }
+  }
+
+  Future<void> rejectIncomingRequest(String requestId, {String? reason}) async {
+    final token = _currentToken;
+    if (token == null || token.isEmpty) {
+      state = state.copyWith(error: 'Authentication required');
+      return;
+    }
+
+    try {
+      await _apiClient.rejectDeliveryRequest(
+        token: token,
+        requestId: requestId,
+        reason: reason,
+      );
+      await loadFromBackend(token: token);
+    } catch (e) {
+      state = state.copyWith(
+        error: e.toString().replaceAll('Exception: ', ''),
+      );
+    }
+  }
+
   /// Update delivery status
   void updateDeliveryStatus(String deliveryId, String newStatus) {
     final updated = state.activeDeliveries.map((d) {
@@ -286,11 +633,39 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
   Future<void> updateProfile(DeliveryPartnerProfile newProfile) async {
     state = state.copyWith(isLoading: true);
     try {
-      await Future.delayed(const Duration(seconds: 1));
-      state = state.copyWith(
-        profile: newProfile,
-        isLoading: false,
-      );
+      final token = _currentToken;
+      final payload = <String, dynamic>{
+        'name': newProfile.name,
+        'email': newProfile.email,
+        'phone': newProfile.phone,
+      }..removeWhere(
+          (_, value) => value == null || value.toString().trim().isEmpty);
+
+      if (token != null && token.isNotEmpty && payload.isNotEmpty) {
+        // The current backend only exposes the authenticated user's profile
+        // fields, so we update the shared user record and keep delivery-only
+        // attributes such as vehicle type local for now.
+        final response = await _apiClient.updateProfile(
+          token: token,
+          payload: payload,
+        );
+
+        final updatedUser = response['user'] is Map<String, dynamic>
+            ? Map<String, dynamic>.from(response['user'] as Map)
+            : <String, dynamic>{};
+
+        state = state.copyWith(
+          profile: newProfile.copyWith(
+            name: updatedUser['name']?.toString() ?? newProfile.name,
+            email: updatedUser['email']?.toString() ?? newProfile.email,
+            phone: updatedUser['phone']?.toString() ?? newProfile.phone,
+          ),
+          isLoading: false,
+        );
+        return;
+      }
+
+      state = state.copyWith(profile: newProfile, isLoading: false);
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -322,19 +697,32 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
 /// Delivery Panel Provider
 final deliveryPanelProvider =
     StateNotifierProvider<DeliveryPanelNotifier, DeliveryPanelState>((ref) {
-  return DeliveryPanelNotifier();
+  final notifier = DeliveryPanelNotifier(apiClient: ApiClient());
+
+  void refreshFromAuth(AuthState authState) {
+    final token = authState.token;
+    if (token == null || token.isEmpty) return;
+    unawaited(
+      notifier.loadFromBackend(
+        token: token,
+        fallbackUser: authState.user,
+      ),
+    );
+  }
+
+  ref.listen<AuthState>(authProvider, (_, next) {
+    refreshFromAuth(next);
+  });
+
+  refreshFromAuth(ref.read(authProvider));
+
+  return notifier;
 });
 
 /// Weekly Earnings Data Provider
 final weeklyEarningsDataProvider =
     Provider<List<MapEntry<String, double>>>((ref) {
-  return [
-    MapEntry('Mon', 65.0),
-    MapEntry('Tue', 78.5),
-    MapEntry('Wed', 82.0),
-    MapEntry('Thu', 55.5),
-    MapEntry('Fri', 95.0),
-    MapEntry('Sat', 110.0),
-    MapEntry('Sun', 59.75),
-  ];
+  return ref.watch(
+    deliveryPanelProvider.select((state) => state.weeklyEarningsBreakdown),
+  );
 });

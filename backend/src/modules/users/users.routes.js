@@ -5,6 +5,7 @@ const { requireAuth, requireRole } = require('../../middlewares/auth');
 const router = express.Router();
 
 router.get('/me', requireAuth, controller.me);
+router.get('/me/delivery-dashboard', requireAuth, controller.getMyDeliveryDashboard);
 router.patch('/me', requireAuth, controller.updateMe);
 router.get('/me/addresses', requireAuth, controller.listMyAddresses);
 router.post('/me/addresses', requireAuth, controller.createMyAddress);

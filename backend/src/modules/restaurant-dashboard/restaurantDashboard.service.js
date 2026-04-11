@@ -2,6 +2,7 @@ const crypto = require('crypto');
 const ApiError = require('../../utils/apiError');
 const repository = require('./restaurantDashboard.repository');
 const usersStore = require('../users/users.store');
+const deliveryRequestsStore = require('../delivery-requests/deliveryRequests.store');
 const path = require('path');
 const fs = require('fs/promises');
 
@@ -302,7 +303,52 @@ async function updateOrderStatus({ user, restaurantId, orderId, status }) {
     throw new ApiError(404, 'Order not found for this restaurant');
   }
 
+  if (status === 'confirmed') {
+    await deliveryRequestsStore.createRequestsForOrder(order.id);
+  }
+
   return order;
+}
+
+async function listAvailableDeliveryPartners({ user, restaurantId }) {
+  const resolvedRestaurantId = await resolveRestaurantId({ user, restaurantId });
+  await assertRestaurantAccess({ user, restaurantId: resolvedRestaurantId });
+
+  return deliveryRequestsStore.listAvailableDeliveryPartners();
+}
+
+async function assignOrderToDeliveryPartner({
+  user,
+  restaurantId,
+  orderId,
+  deliveryPartnerId,
+}) {
+  const resolvedRestaurantId = await resolveRestaurantId({ user, restaurantId });
+  await assertRestaurantAccess({ user, restaurantId: resolvedRestaurantId });
+
+  if (!deliveryPartnerId) {
+    throw new ApiError(400, 'deliveryPartnerId is required');
+  }
+
+  const order = await repository.updateRestaurantOrderStatus({
+    restaurantId: resolvedRestaurantId,
+    orderId,
+    status: 'confirmed',
+  });
+
+  if (!order) {
+    throw new ApiError(404, 'Order not found for this restaurant');
+  }
+
+  const request = await deliveryRequestsStore.createRequestForOrderAndPartner(
+    order.id,
+    deliveryPartnerId
+  );
+
+  return {
+    order,
+    request,
+  };
 }
 
 async function getAnalytics({ user, restaurantId, days }) {
@@ -332,5 +378,7 @@ module.exports = {
   removeMenuItem,
   listOrders,
   updateOrderStatus,
+  listAvailableDeliveryPartners,
+  assignOrderToDeliveryPartner,
   getAnalytics,
 };

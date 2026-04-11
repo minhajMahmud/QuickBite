@@ -300,6 +300,12 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
     final paymentMethod =
         (selected['paymentMethod'] ?? selected['payment_method'] ?? 'cash')
             .toString();
+    final deliveryPartner = selected['deliveryPartner'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(selected['deliveryPartner'] as Map)
+        : <String, dynamic>{};
+    final deliveryRequest = selected['deliveryRequest'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(selected['deliveryRequest'] as Map)
+        : <String, dynamic>{};
 
     final statusIndex = _statusIndexFromBackend(status);
     final progress = (statusIndex + 1) / _timelineStatuses.length;
@@ -467,6 +473,54 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
               'Payment: $paymentMethod • Status: $paymentStatus',
               style: const TextStyle(color: AppColors.muted),
             ),
+            if (deliveryPartner.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(16),
+                  border:
+                      Border.all(color: Colors.blue.withValues(alpha: 0.18)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Delivery partner assigned',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      deliveryPartner['name']?.toString() ?? 'Delivery partner',
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Phone: ${deliveryPartner['phone']?.toString() ?? '-'}',
+                      style: const TextStyle(color: AppColors.muted),
+                    ),
+                    if ((deliveryPartner['email']?.toString() ?? '')
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Email: ${deliveryPartner['email']}',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                    ],
+                    if ((deliveryRequest['status']?.toString() ?? '')
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Request status: ${deliveryRequest['status']}',
+                        style: const TextStyle(color: AppColors.muted),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             LinearProgressIndicator(
               value: progress,

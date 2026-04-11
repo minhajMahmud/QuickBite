@@ -605,6 +605,348 @@ async function markAllNotificationsReadByUser(userId) {
   );
 }
 
+function toDeliveryDashboardOrder(row) {
+  if (!row) return null;
+
+  const customerAddressParts = [
+    row.street_address,
+    row.city,
+    row.state,
+    row.postal_code,
+  ]
+    .filter((part) => part && String(part).trim().length > 0)
+    .map((part) => String(part).trim());
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    restaurantId: row.restaurant_id,
+    restaurantName: row.restaurant_name,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    customerAddress: customerAddressParts.join(', ') || null,
+    deliveryAddressId: row.delivery_address_id,
+    deliveryFee: Number(row.delivery_fee || 0),
+    totalAmount: Number(row.total_amount || 0),
+    status: row.order_status,
+    paymentStatus: row.payment_status,
+    estimatedDeliveryTime: row.estimated_delivery_time,
+    actualDeliveryTime: row.actual_delivery_time,
+    createdAt: row.created_at,
+  };
+}
+
+function toDeliveryDashboardProfile(user, agent, averageRating, totalDeliveries) {
+  return {
+    id: agent?.id || user.id,
+    name: agent?.name || user.name,
+    email: agent?.email || user.email,
+    phone: agent?.phone || user.phone || '-',
+    rating: Number(agent?.rating ?? averageRating ?? 0),
+    totalDeliveries: Number(agent?.total_deliveries ?? totalDeliveries ?? 0),
+    isActive: agent?.is_active ?? (user.status === 'active'),
+    vehicleType: agent?.vehicle_type || '-',
+    licensePlate: agent?.vehicle_number || '-',
+    status: agent?.status || user.status,
+    totalEarnings: Number(agent?.total_earnings ?? 0),
+  };
+}
+
+async function getDeliveryDashboardForUser(userId) {
+  const userResult = await pool.query(
+    `
+    SELECT *
+    FROM users
+    WHERE id = $1
+      AND deleted_at IS NULL
+    LIMIT 1
+    `,
+    [userId]
+  );
+
+  if (!userResult.rows[0]) {
+    return null;
+  }
+
+  const user = withTransientFields(toUserModel(userResult.rows[0]));
+
+  const deliveryAgentResult = await pool.query(
+    `
+    SELECT *
+    FROM delivery_agents
+    WHERE LOWER(email) = LOWER($1)
+    LIMIT 1
+    `,
+    [user.email]
+  );
+
+  const deliveryAgent = deliveryAgentResult.rows[0] || null;
+  const dashboardId = deliveryAgent?.id || user.id;
+
+  const incomingRequestsResult = await pool.query(
+    `
+    SELECT
+      dr.id,
+      dr.order_id,
+      dr.status,
+      dr.rejection_reason,
+      dr.created_at,
+      dr.updated_at,
+      dr.responded_at,
+      dr.accepted_at,
+      dr.rejected_at,
+      o.total_amount,
+      o.delivery_fee,
+      o.order_status,
+      o.estimated_delivery_time,
+      o.created_at AS order_created_at,
+      o.delivery_address_id,
+      r.name AS restaurant_name,
+      cu.name AS customer_name,
+      cu.email AS customer_email,
+      cu.phone AS customer_phone,
+      ua.street_address,
+      ua.city,
+      ua.state,
+      ua.postal_code
+    FROM delivery_requests dr
+    JOIN orders o ON o.id = dr.order_id
+    LEFT JOIN restaurants r ON r.id = o.restaurant_id
+    LEFT JOIN users cu ON cu.id = o.user_id
+    LEFT JOIN user_addresses ua ON ua.id = o.delivery_address_id
+    WHERE dr.delivery_partner_id = $1
+      AND dr.status = 'pending'
+      AND o.deleted_at IS NULL
+    ORDER BY dr.created_at ASC
+    LIMIT 50
+    `,
+    [dashboardId]
+  );
+
+  const acceptedRequestsResult = await pool.query(
+    `
+    SELECT
+      dr.id,
+      dr.order_id,
+      dr.status,
+      dr.rejection_reason,
+      dr.created_at,
+      dr.updated_at,
+      dr.responded_at,
+      dr.accepted_at,
+      dr.rejected_at,
+      o.total_amount,
+      o.delivery_fee,
+      o.order_status,
+      o.estimated_delivery_time,
+      o.actual_delivery_time,
+      o.created_at AS order_created_at,
+      o.delivery_address_id,
+      r.name AS restaurant_name,
+      cu.name AS customer_name,
+      cu.email AS customer_email,
+      cu.phone AS customer_phone,
+      ua.street_address,
+      ua.city,
+      ua.state,
+      ua.postal_code
+    FROM delivery_requests dr
+    JOIN orders o ON o.id = dr.order_id
+    LEFT JOIN restaurants r ON r.id = o.restaurant_id
+    LEFT JOIN users cu ON cu.id = o.user_id
+    LEFT JOIN user_addresses ua ON ua.id = o.delivery_address_id
+    WHERE dr.delivery_partner_id = $1
+      AND dr.status = 'accepted'
+      AND o.deleted_at IS NULL
+    ORDER BY dr.accepted_at DESC NULLS LAST, dr.updated_at DESC
+    LIMIT 50
+    `,
+    [dashboardId]
+  );
+
+  const columnInfo = await pool.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'orders'
+    `
+  );
+
+  const orderColumns = new Set(columnInfo.rows.map((r) => r.column_name));
+  const deliveryFkColumn = orderColumns.has('delivery_agent_id')
+    ? 'delivery_agent_id'
+    : orderColumns.has('delivery_partner_id')
+      ? 'delivery_partner_id'
+      : null;
+
+  let orders = [];
+  if (deliveryFkColumn) {
+    const ordersResult = await pool.query(
+      `
+      SELECT
+        o.id,
+        o.user_id,
+        o.restaurant_id,
+        o.delivery_address_id,
+        o.delivery_fee,
+        o.total_amount,
+        o.order_status,
+        o.payment_status,
+        o.estimated_delivery_time,
+        o.actual_delivery_time,
+        o.created_at,
+        r.name AS restaurant_name,
+        u.name AS customer_name,
+        u.email AS customer_email,
+        ua.street_address,
+        ua.city,
+        ua.state,
+        ua.postal_code
+      FROM orders o
+      LEFT JOIN restaurants r ON r.id = o.restaurant_id
+      LEFT JOIN users u ON u.id = o.user_id
+      LEFT JOIN user_addresses ua ON ua.id = o.delivery_address_id
+      WHERE o.${deliveryFkColumn} = $1
+        AND o.deleted_at IS NULL
+      ORDER BY o.created_at DESC
+      LIMIT 50
+      `,
+      [dashboardId]
+    );
+
+    orders = ordersResult.rows.map(toDeliveryDashboardOrder);
+  }
+
+  const ratingsResult = await pool.query(
+    `
+    SELECT
+      COALESCE(AVG(rating), 0) AS "averageRating",
+      COUNT(*)::int AS "ratingCount"
+    FROM delivery_agent_ratings
+    WHERE delivery_agent_id = $1
+    `,
+    [dashboardId]
+  );
+
+  const ratings = ratingsResult.rows[0] || {
+    averageRating: 0,
+    ratingCount: 0,
+  };
+
+  const now = new Date();
+  const weekAgo = new Date(now);
+  weekAgo.setDate(now.getDate() - 6);
+  const startOfToday = new Date(now);
+  startOfToday.setHours(0, 0, 0, 0);
+
+  const deliveredOrders = orders.filter((order) => order.status === 'delivered');
+  const activeOrders = orders.filter((order) => {
+    const status = String(order.status || '').toLowerCase();
+    return !['delivered', 'cancelled'].includes(status);
+  });
+
+  const deliveredToday = deliveredOrders.filter((order) => {
+    const deliveredAt = order.actualDeliveryTime ? new Date(order.actualDeliveryTime) : null;
+    const createdAt = order.createdAt ? new Date(order.createdAt) : null;
+    const effectiveDate = deliveredAt || createdAt;
+    return effectiveDate && effectiveDate >= startOfToday;
+  });
+
+  const weeklyTotals = new Map([
+    ['Mon', 0],
+    ['Tue', 0],
+    ['Wed', 0],
+    ['Thu', 0],
+    ['Fri', 0],
+    ['Sat', 0],
+    ['Sun', 0],
+  ]);
+
+  const weekdayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  deliveredOrders.forEach((order) => {
+    const date = order.actualDeliveryTime ? new Date(order.actualDeliveryTime) : new Date(order.createdAt);
+    if (Number.isNaN(date.getTime()) || date < weekAgo) return;
+    const label = weekdayLabels[date.getDay() === 0 ? 6 : date.getDay() - 1];
+    weeklyTotals.set(label, (weeklyTotals.get(label) || 0) + Number(order.deliveryFee || 0));
+  });
+
+  const profile = toDeliveryDashboardProfile(
+    user,
+    deliveryAgent,
+    ratings.averageRating,
+    orders.length
+  );
+
+  const mapRequest = (row) => {
+    const addressParts = [row.street_address, row.city, row.state, row.postal_code]
+      .filter((part) => part && String(part).trim())
+      .map((part) => String(part).trim());
+
+    return {
+      id: row.id,
+      orderId: row.order_id,
+      status: row.status,
+      rejectionReason: row.rejection_reason,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      respondedAt: row.responded_at,
+      acceptedAt: row.accepted_at,
+      rejectedAt: row.rejected_at,
+      order: {
+        id: row.order_id,
+        restaurantName: row.restaurant_name,
+        customerName: row.customer_name,
+        customerEmail: row.customer_email,
+        customerPhone: row.customer_phone,
+        customerAddress: addressParts.join(', ') || null,
+        totalAmount: Number(row.total_amount || 0),
+        deliveryFee: Number(row.delivery_fee || 0),
+        status: row.order_status,
+        estimatedDeliveryTime: row.estimated_delivery_time,
+        actualDeliveryTime: row.actual_delivery_time,
+        createdAt: row.order_created_at,
+        deliveryAddressId: row.delivery_address_id,
+      },
+    };
+  };
+
+  return {
+    profile,
+    summary: {
+      totalDeliveries: orders.length,
+      completedDeliveries: deliveredOrders.length,
+      activeDeliveries: activeOrders.length,
+      ratingCount: ratings.ratingCount,
+      averageRating: Number(ratings.averageRating || 0),
+    },
+    metrics: {
+      totalEarningsToday: deliveredToday.reduce((sum, order) => sum + Number(order.deliveryFee || 0), 0),
+      weeklyEarnings: deliveredOrders
+        .filter((order) => {
+          const date = order.actualDeliveryTime ? new Date(order.actualDeliveryTime) : new Date(order.createdAt);
+          return !Number.isNaN(date.getTime()) && date >= weekAgo;
+        })
+        .reduce((sum, order) => sum + Number(order.deliveryFee || 0), 0),
+      totalDeliveriesToday: deliveredToday.length,
+    },
+    weeklyEarningsBreakdown: weekdayLabels.map((label) => ({
+      day: label,
+      amount: weeklyTotals.get(label) || 0,
+    })),
+    activeDeliveries: acceptedRequestsResult.rows.map(mapRequest),
+    incomingRequests: incomingRequestsResult.rows.map(mapRequest),
+    earnings: deliveredOrders.map((order) => ({
+      id: order.id,
+      deliveryId: order.id,
+      amount: Number(order.deliveryFee || 0),
+      date: order.actualDeliveryTime || order.createdAt,
+      status: order.status === 'delivered' ? 'completed' : 'pending',
+    })),
+  };
+}
+
 module.exports = {
   createUser,
   findUserByEmail,
@@ -624,4 +966,5 @@ module.exports = {
   removeFavoriteByRestaurant,
   listNotificationsByUser,
   markAllNotificationsReadByUser,
+  getDeliveryDashboardForUser,
 };

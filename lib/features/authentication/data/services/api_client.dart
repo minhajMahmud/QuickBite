@@ -303,6 +303,134 @@ class ApiClient {
     }
   }
 
+  /// Get authenticated delivery partner dashboard data
+  Future<Map<String, dynamic>> getMyDeliveryDashboard({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/users/me/delivery-dashboard'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch delivery dashboard');
+    }
+
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> getMyIncomingDeliveryRequests({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/delivery-requests/incoming'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(
+          data['message'] ?? 'Failed to fetch incoming delivery requests');
+    }
+
+    final raw = data['requests'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> acceptDeliveryRequest({
+    required String token,
+    required String requestId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$_baseUrl/delivery-requests/$requestId/accept'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to accept delivery request');
+    }
+
+    return data;
+  }
+
+  Future<Map<String, dynamic>> rejectDeliveryRequest({
+    required String token,
+    required String requestId,
+    String? reason,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/delivery-requests/$requestId/reject'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            if (reason != null && reason.trim().isNotEmpty)
+              'reason': reason.trim(),
+          }),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to reject delivery request');
+    }
+
+    return data;
+  }
+
+  /// Get the authenticated user's profile
+  Future<Map<String, dynamic>> getMyProfile({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/users/me'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch profile');
+    }
+
+    return data;
+  }
+
   Future<List<Map<String, dynamic>>> getMyAddresses({
     required String token,
   }) async {
@@ -1184,6 +1312,64 @@ class ApiClient {
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
       throw Exception(data['message'] ?? 'Failed to update order status');
+    }
+
+    return data;
+  }
+
+  Future<List<Map<String, dynamic>>> getRestaurantAvailableDeliveryPartners({
+    required String token,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/restaurant-dashboard/delivery-partners/available'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(
+          data['message'] ?? 'Failed to fetch available delivery partners');
+    }
+
+    final raw = data['partners'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> assignRestaurantOrderDeliveryPartner({
+    required String token,
+    required String orderId,
+    required String deliveryPartnerId,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse(
+              '$_baseUrl/restaurant-dashboard/orders/$orderId/assign-delivery-partner'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({'deliveryPartnerId': deliveryPartnerId}),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(
+          data['message'] ?? 'Failed to assign delivery partner to order');
     }
 
     return data;

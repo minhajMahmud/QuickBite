@@ -104,6 +104,34 @@ async function updateOrderStatus(req, res, next) {
   }
 }
 
+async function listAvailableDeliveryPartners(req, res, next) {
+  try {
+    const partners = await service.listAvailableDeliveryPartners({
+      user: req.user,
+      restaurantId: req.query.restaurantId,
+    });
+
+    res.json({ partners });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function assignOrderToDeliveryPartner(req, res, next) {
+  try {
+    const result = await service.assignOrderToDeliveryPartner({
+      user: req.user,
+      restaurantId: req.body.restaurantId || req.query.restaurantId,
+      orderId: req.params.orderId,
+      deliveryPartnerId: req.body.deliveryPartnerId,
+    });
+
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+
 async function analytics(req, res, next) {
   try {
     const data = await service.getAnalytics({
@@ -126,5 +154,7 @@ module.exports = {
   deleteMenuItem,
   listOrders,
   updateOrderStatus,
+  listAvailableDeliveryPartners,
+  assignOrderToDeliveryPartner,
   analytics,
 };

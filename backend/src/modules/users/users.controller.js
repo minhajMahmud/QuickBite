@@ -74,6 +74,26 @@ async function me(req, res, next) {
   }
 }
 
+async function getMyDeliveryDashboard(req, res, next) {
+  try {
+    if (req.user.role !== 'delivery_partner') {
+      throw new ApiError(403, 'Forbidden: delivery dashboard is available only for delivery partners');
+    }
+
+    const dashboard = await usersStore.getDeliveryDashboardForUser(req.user.sub);
+    if (!dashboard) {
+      throw new ApiError(404, 'Delivery partner not found');
+    }
+
+    return res.json({
+      message: 'Delivery dashboard retrieved successfully',
+      data: dashboard,
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 async function updateMe(req, res, next) {
   try {
     const allowedFields = ['name', 'email', 'phone', 'avatar', 'dateOfBirth', 'gender'];
@@ -348,6 +368,7 @@ module.exports = {
   listPendingApprovals,
   setUserApproval,
   me,
+  getMyDeliveryDashboard,
   updateMe,
   listMyAddresses,
   createMyAddress,

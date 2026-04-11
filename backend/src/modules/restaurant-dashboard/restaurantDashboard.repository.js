@@ -323,6 +323,9 @@ async function listRestaurantOrders({ restaurantId, status, limit, offset }) {
       o.id,
       o.user_id,
       u.name AS customer_name,
+      dp.name AS delivery_partner_name,
+      dp.email AS delivery_partner_email,
+      dp.phone AS delivery_partner_phone,
       o.subtotal,
       o.delivery_fee,
       o.discount_amount,
@@ -350,10 +353,19 @@ async function listRestaurantOrders({ restaurantId, status, limit, offset }) {
       ) AS items
     FROM orders o
     JOIN users u ON u.id = o.user_id
+    LEFT JOIN LATERAL (
+      SELECT dr.delivery_partner_id
+      FROM delivery_requests dr
+      WHERE dr.order_id = o.id
+        AND dr.status = 'accepted'
+      ORDER BY dr.accepted_at DESC NULLS LAST, dr.updated_at DESC
+      LIMIT 1
+    ) accepted_request ON TRUE
+    LEFT JOIN users dp ON dp.id = accepted_request.delivery_partner_id
     LEFT JOIN order_items oi ON oi.order_id = o.id
     LEFT JOIN food_items fi ON fi.id = oi.food_item_id
     WHERE ${where.join(' AND ')}
-    GROUP BY o.id, u.name
+    GROUP BY o.id, u.name, dp.name, dp.email, dp.phone
     ORDER BY o.created_at DESC
     LIMIT ${limitParam}
     OFFSET ${offsetParam};

@@ -10,6 +10,87 @@ import '../providers/delivery_panel_provider.dart';
 final ValueNotifier<bool> _deliverySidebarCollapsed =
     ValueNotifier<bool>(false);
 
+void _showActionSnackBar(
+  BuildContext context,
+  String message, {
+  bool isError = false,
+}) {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        backgroundColor:
+            isError ? const Color(0xFFB42318) : const Color(0xFF111827),
+        content: Row(
+          children: [
+            Icon(
+              isError ? Icons.error_outline : Icons.check_circle_outline,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                message,
+                style: const TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+}
+
+ButtonStyle _primaryActionStyle({required Color color}) {
+  return ButtonStyle(
+    backgroundColor: MaterialStateProperty.resolveWith<Color>(
+      (states) {
+        if (states.contains(MaterialState.disabled))
+          return color.withOpacity(0.55);
+        if (states.contains(MaterialState.pressed))
+          return color.withOpacity(0.85);
+        if (states.contains(MaterialState.hovered))
+          return color.withOpacity(0.92);
+        return color;
+      },
+    ),
+    foregroundColor: MaterialStateProperty.all(Colors.white),
+    elevation: MaterialStateProperty.resolveWith<double>(
+      (states) => states.contains(MaterialState.hovered) ? 2 : 0,
+    ),
+    shape: MaterialStateProperty.all(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    animationDuration: const Duration(milliseconds: 160),
+  );
+}
+
+ButtonStyle _secondaryActionStyle(BuildContext context) {
+  final theme = Theme.of(context);
+  return ButtonStyle(
+    foregroundColor: MaterialStateProperty.resolveWith<Color>(
+      (states) => states.contains(MaterialState.disabled)
+          ? Colors.grey
+          : theme.textTheme.bodyMedium?.color ?? Colors.black87,
+    ),
+    side: MaterialStateProperty.resolveWith<BorderSide>(
+      (states) => BorderSide(
+        color: states.contains(MaterialState.hovered)
+            ? theme.colorScheme.primary.withOpacity(0.5)
+            : theme.dividerColor.withOpacity(0.35),
+      ),
+    ),
+    shape: MaterialStateProperty.all(
+      RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    ),
+    animationDuration: const Duration(milliseconds: 160),
+  );
+}
+
 /// Admin Delivery Report Screen
 class DeliveryDashboardScreen extends ConsumerWidget {
   const DeliveryDashboardScreen({Key? key}) : super(key: key);
@@ -18,32 +99,53 @@ class DeliveryDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(deliveryPanelProvider);
     final weeklyData = ref.watch(weeklyEarningsDataProvider);
+    final pendingDeliveries = state.incomingRequests
+        .map(
+          (request) => ActiveDelivery(
+            id: request.id,
+            restaurantName: request.restaurantName,
+            customerName: request.customerName,
+            customerAddress: request.customerAddress,
+            estimatedEarning: request.deliveryFee,
+            pickupLocation: request.restaurantName,
+            dropLocation: request.customerAddress,
+            status: request.status,
+            createdAt: request.createdAt,
+          ),
+        )
+        .toList();
 
     return DeliveryPanelScaffold(
       currentRoute: '/delivery-partner',
       title: 'Delivery Partner Dashboard',
-      subtitle: 'Weekly and detailed delivery analytics',
+      subtitle: 'Live operations, earnings, and delivery requests',
       bottomButton: SizedBox(
         width: double.infinity,
-        height: 50,
+        height: 52,
         child: ElevatedButton.icon(
           onPressed: () {
             context.push('/delivery-partner/incoming-order');
           },
           icon: const Icon(Icons.local_shipping),
           label: const Text('Take New Delivery'),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.green,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
+          style: _primaryActionStyle(color: const Color(0xFF0F9D58)),
         ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Report Summary Cards
+          _PanelCard(
+            child: _DashboardHero(
+              name: state.profile.name,
+              activeDeliveries: state.activeDeliveries.length,
+              incomingRequests: state.incomingRequests.length,
+              weeklyEarnings: state.weeklyEarnings,
+              onTakeDelivery: () {
+                context.push('/delivery-partner/incoming-order');
+              },
+            ),
+          ),
+          const SizedBox(height: 24),
           _EarningsSummaryGrid(
             weeklyEarnings: state.weeklyEarnings,
             totalDeliveries: state.totalDeliveriesToday,
@@ -53,8 +155,6 @@ class DeliveryDashboardScreen extends ConsumerWidget {
             rating: state.profile.rating,
           ),
           const SizedBox(height: 24),
-
-          // KPI Snapshot
           _KPIGrid(
             totalEarningsToday: state.totalEarningsToday,
             totalDeliveries: state.totalDeliveriesToday,
@@ -62,71 +162,59 @@ class DeliveryDashboardScreen extends ConsumerWidget {
             ordersCompleted: state.profile.totalDeliveries,
           ),
           const SizedBox(height: 24),
-
-          // Weekly Report Breakdown
           _PanelCard(
             title: 'Weekly Delivery Report',
             child: _WeeklyEarningsBreakdown(data: weeklyData),
           ),
           const SizedBox(height: 24),
-
-          // Detailed Report Table
           _PanelCard(
             title: 'Detailed Delivery Report',
             child: _EarningsDetailsList(earnings: state.earnings),
           ),
           const SizedBox(height: 24),
-
-          // Visual Trend Chart
           _WeeklyEarningsChart(),
-
-          if (state.activeDeliveries.isNotEmpty) ...[
+          if (pendingDeliveries.isNotEmpty) ...[
             const SizedBox(height: 24),
             _PanelCard(
-              title: 'Live Delivery Snapshot',
-              child: _ActiveDeliveryCard(
-                delivery: state.activeDeliveries.first,
-                onConfirmOrder: () {
+              title: 'Incoming Delivery Requests',
+              child: _PendingDeliveriesList(
+                deliveries: pendingDeliveries,
+                onConfirmOrder: (deliveryId) {
                   ref
                       .read(deliveryPanelProvider.notifier)
-                      .confirmDelivery(state.activeDeliveries.first.id);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Order confirmed.')),
-                  );
+                      .acceptIncomingRequest(deliveryId);
+                  _showActionSnackBar(context, 'Delivery accepted.');
                 },
-                onCancelOrder: () {
+                onCancelOrder: (deliveryId) {
                   ref
                       .read(deliveryPanelProvider.notifier)
-                      .cancelDelivery(state.activeDeliveries.first.id);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Order cancelled.')),
-                  );
-                },
-                onStatusChange: (newStatus) {
-                  ref.read(deliveryPanelProvider.notifier).updateDeliveryStatus(
-                      state.activeDeliveries.first.id, newStatus);
+                      .rejectIncomingRequest(deliveryId);
+                  _showActionSnackBar(context, 'Delivery declined.',
+                      isError: true);
                 },
               ),
             ),
+          ],
+          if (state.activeDeliveries.isNotEmpty) ...[
             const SizedBox(height: 24),
-            _PendingDeliveriesList(
-              deliveries: state.activeDeliveries,
-              onConfirmOrder: (deliveryId) {
-                ref
-                    .read(deliveryPanelProvider.notifier)
-                    .confirmDelivery(deliveryId);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Order confirmed.')),
-                );
-              },
-              onCancelOrder: (deliveryId) {
-                ref
-                    .read(deliveryPanelProvider.notifier)
-                    .cancelDelivery(deliveryId);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Order cancelled.')),
-                );
-              },
+            _PanelCard(
+              title: 'Active Deliveries',
+              child: _PendingDeliveriesList(
+                deliveries: state.activeDeliveries,
+                onConfirmOrder: (deliveryId) {
+                  ref
+                      .read(deliveryPanelProvider.notifier)
+                      .confirmDelivery(deliveryId);
+                  _showActionSnackBar(context, 'Delivery confirmed.');
+                },
+                onCancelOrder: (deliveryId) {
+                  ref
+                      .read(deliveryPanelProvider.notifier)
+                      .cancelDelivery(deliveryId);
+                  _showActionSnackBar(context, 'Delivery cancelled.',
+                      isError: true);
+                },
+              ),
             ),
           ],
         ],
@@ -149,8 +237,18 @@ class DeliveryEarningsScreen extends ConsumerWidget {
       title: 'Earnings',
       subtitle: state.profile.name,
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Earnings Summary Cards
+          _PanelCard(
+            child: _SectionIntroCard(
+              icon: Icons.trending_up,
+              title: 'Earnings Overview',
+              description:
+                  'Track your daily momentum, delivery yield, and weekly trends at a glance.',
+              accentColor: const Color(0xFFFF7A00),
+            ),
+          ),
+          const SizedBox(height: 24),
           _EarningsSummaryGrid(
             weeklyEarnings: state.weeklyEarnings,
             totalDeliveries: state.totalDeliveriesToday,
@@ -158,15 +256,11 @@ class DeliveryEarningsScreen extends ConsumerWidget {
             rating: state.profile.rating,
           ),
           const SizedBox(height: 24),
-
-          // Weekly Earnings Breakdown
           _PanelCard(
             title: 'Weekly Earnings Breakdown',
             child: _WeeklyEarningsBreakdown(data: weeklyData),
           ),
           const SizedBox(height: 24),
-
-          // Earnings Details Table
           _PanelCard(
             title: 'Recent Deliveries',
             child: _EarningsDetailsList(earnings: state.earnings),
@@ -192,7 +286,16 @@ class DeliverySettingsScreen extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Profile Section
+            _PanelCard(
+              child: _SectionIntroCard(
+                icon: Icons.tune,
+                title: 'Partner Preferences',
+                description:
+                    'Control profile, delivery availability, and alerts from one clean settings center.',
+                accentColor: const Color(0xFF0F9D58),
+              ),
+            ),
+            const SizedBox(height: 24),
             _PanelCard(
               title: 'Profile Information',
               child: _ProfileSettingsForm(
@@ -201,16 +304,11 @@ class DeliverySettingsScreen extends ConsumerWidget {
                   ref
                       .read(deliveryPanelProvider.notifier)
                       .updateProfile(newProfile);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text('Profile updated successfully')),
-                  );
+                  _showActionSnackBar(context, 'Profile updated successfully');
                 },
               ),
             ),
             const SizedBox(height: 24),
-
-            // Delivery Preferences
             _PanelCard(
               title: 'Delivery Preferences',
               child: Column(
@@ -247,8 +345,6 @@ class DeliverySettingsScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 24),
-
-            // Notifications
             _PanelCard(
               title: 'Notifications',
               child: Column(
@@ -298,116 +394,70 @@ class DeliveryOrdersScreen extends ConsumerWidget {
       title: 'Pending Orders',
       subtitle: 'Active delivery orders',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Summary Stats
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.blue.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.local_shipping,
-                          size: 24, color: Colors.blue),
-                      const SizedBox(height: 8),
-                      Text(
-                        state.activeDeliveries.length.toString(),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Total Orders',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Colors.grey,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.orange.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.hourglass_empty,
-                          size: 24, color: Colors.orange),
-                      const SizedBox(height: 8),
-                      Text(
-                        state.activeDeliveries
-                            .where((d) => d.status == 'pending')
-                            .length
-                            .toString(),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Pending',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Colors.grey,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.check_circle,
-                          size: 24, color: Colors.green),
-                      const SizedBox(height: 8),
-                      Text(
-                        state.activeDeliveries
-                            .where((d) => d.status == 'confirmed')
-                            .length
-                            .toString(),
-                        style:
-                            Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Confirmed',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Colors.grey,
-                            ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+          _PanelCard(
+            child: _SectionIntroCard(
+              icon: Icons.assignment_turned_in_outlined,
+              title: 'Orders Command Center',
+              description:
+                  'Review active jobs, monitor status movement, and act quickly on order events.',
+              accentColor: const Color(0xFF2563EB),
+            ),
           ),
           const SizedBox(height: 24),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isNarrow = constraints.maxWidth < 760;
+              final stats = [
+                _OrderStatCard(
+                  icon: Icons.local_shipping,
+                  value: state.activeDeliveries.length.toString(),
+                  label: 'Total Orders',
+                  color: const Color(0xFF2563EB),
+                ),
+                _OrderStatCard(
+                  icon: Icons.hourglass_bottom,
+                  value: state.activeDeliveries
+                      .where((d) => d.status == 'pending')
+                      .length
+                      .toString(),
+                  label: 'Pending',
+                  color: const Color(0xFFF59E0B),
+                ),
+                _OrderStatCard(
+                  icon: Icons.check_circle,
+                  value: state.activeDeliveries
+                      .where((d) => d.status == 'confirmed')
+                      .length
+                      .toString(),
+                  label: 'Confirmed',
+                  color: const Color(0xFF10B981),
+                ),
+              ];
 
-          // All Orders List
+              if (isNarrow) {
+                return Column(
+                  children: [
+                    for (final card in stats) ...[
+                      card,
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  for (var i = 0; i < stats.length; i++) ...[
+                    Expanded(child: stats[i]),
+                    if (i < stats.length - 1) const SizedBox(width: 12),
+                  ],
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
           _PanelCard(
             title: 'All Active Orders',
             child: state.activeDeliveries.isEmpty
@@ -500,20 +550,15 @@ class DeliveryOrdersScreen extends ConsumerWidget {
                                     ref
                                         .read(deliveryPanelProvider.notifier)
                                         .confirmDelivery(delivery.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Order confirmed'),
-                                      ),
-                                    );
+                                    _showActionSnackBar(
+                                        context, 'Order confirmed');
                                   } else if (value == 'cancel') {
                                     ref
                                         .read(deliveryPanelProvider.notifier)
                                         .cancelDelivery(delivery.id);
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Order cancelled'),
-                                      ),
-                                    );
+                                    _showActionSnackBar(
+                                        context, 'Order cancelled',
+                                        isError: true);
                                   }
                                 },
                                 itemBuilder: (context) => [
@@ -632,8 +677,22 @@ class _StatCard extends StatelessWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: const Color(0xFFFF7A00), size: 28),
-          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  const Color(0xFFFF7A00).withOpacity(0.18),
+                  const Color(0xFFFF7A00).withOpacity(0.06),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, color: const Color(0xFFFF7A00), size: 26),
+          ),
+          const SizedBox(height: 14),
           Text(
             value,
             style: theme.textTheme.headlineSmall?.copyWith(
@@ -1374,11 +1433,26 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    final decoration = InputDecoration(
+      filled: true,
+      fillColor: theme.colorScheme.surface.withOpacity(0.75),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: theme.dividerColor.withOpacity(0.25)),
+      ),
+    );
+
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         TextField(
           controller: nameController,
-          decoration: const InputDecoration(
+          decoration: decoration.copyWith(
             labelText: 'Full Name',
             hintText: 'Enter your full name',
           ),
@@ -1386,7 +1460,7 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
         const SizedBox(height: 12),
         TextField(
           controller: emailController,
-          decoration: const InputDecoration(
+          decoration: decoration.copyWith(
             labelText: 'Email',
             hintText: 'Enter your email',
           ),
@@ -1394,7 +1468,7 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
         const SizedBox(height: 12),
         TextField(
           controller: phoneController,
-          decoration: const InputDecoration(
+          decoration: decoration.copyWith(
             labelText: 'Phone',
             hintText: 'Enter your phone number',
           ),
@@ -1402,7 +1476,7 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
         const SizedBox(height: 12),
         TextField(
           controller: vehicleController,
-          decoration: const InputDecoration(
+          decoration: decoration.copyWith(
             labelText: 'Vehicle Type',
             hintText: 'e.g., Motorcycle, Car',
           ),
@@ -1410,7 +1484,7 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
         const SizedBox(height: 12),
         TextField(
           controller: licensePlateController,
-          decoration: const InputDecoration(
+          decoration: decoration.copyWith(
             labelText: 'License Plate',
             hintText: 'Enter license plate',
           ),
@@ -1437,6 +1511,118 @@ class _ProfileSettingsFormState extends State<_ProfileSettingsForm> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _SectionIntroCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color accentColor;
+
+  const _SectionIntroCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: accentColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Icon(icon, color: accentColor),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                description,
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OrderStatCard extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+
+  const _OrderStatCard({
+    required this.icon,
+    required this.value,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                label,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1476,8 +1662,15 @@ class DeliveryPanelScaffold extends StatelessWidget {
           ),
         ),
         SliverPadding(
-          padding: const EdgeInsets.all(16),
-          sliver: SliverToBoxAdapter(child: child),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          sliver: SliverToBoxAdapter(
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1280),
+                child: child,
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -1488,6 +1681,7 @@ class DeliveryPanelScaffold extends StatelessWidget {
           title: Text(title),
           backgroundColor: theme.scaffoldBackgroundColor,
           elevation: 0,
+          centerTitle: false,
         ),
         drawer: Drawer(
           child: SafeArea(
@@ -1521,7 +1715,16 @@ class DeliveryPanelScaffold extends StatelessWidget {
           DeliveryPanelSidebar(currentRoute: currentRoute),
           Expanded(
             child: Container(
-              color: theme.scaffoldBackgroundColor,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    theme.colorScheme.surface,
+                    theme.colorScheme.surface.withOpacity(0.96),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
               child: content,
             ),
           ),
@@ -1840,36 +2043,43 @@ class _TopHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       decoration: BoxDecoration(
-        border: Border(
-          bottom: BorderSide(color: theme.dividerColor.withOpacity(0.15)),
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: theme.dividerColor.withOpacity(0.08),
         ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: theme.textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: Colors.grey,
-                ),
-              ),
-            ],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
           ),
-          if (action != null) action!,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: theme.textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: theme.textTheme.bodyMedium?.copyWith(
+              color: Colors.grey[600],
+            ),
+          ),
+          if (action != null) ...[
+            const SizedBox(height: 12),
+            action!,
+          ],
         ],
       ),
     );
@@ -1889,63 +2099,106 @@ class _PanelCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
+    final body = Padding(
+      padding: const EdgeInsets.all(20),
+      child: child,
+    );
+
     return Container(
       decoration: BoxDecoration(
         color: theme.cardColor,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: theme.dividerColor.withOpacity(0.1),
+          color: theme.dividerColor.withOpacity(0.08),
         ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (title != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    title!,
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (title != null)
-            Divider(
-              height: 1,
-              color: theme.dividerColor.withOpacity(0.1),
-            ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: child,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 12),
           ),
         ],
       ),
+      child: title == null
+          ? body
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+                  child: Text(
+                    title!,
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                Divider(
+                  height: 1,
+                  color: theme.dividerColor.withOpacity(0.08),
+                ),
+                body,
+              ],
+            ),
     );
   }
 }
 
-/// Incoming Order Screen - Shows order details with Accept/Decline options
-class IncomingOrderScreen extends StatelessWidget {
+/// Incoming Order Screen - Shows live requests with Accept/Decline options
+class IncomingOrderScreen extends ConsumerWidget {
   const IncomingOrderScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final state = ref.watch(deliveryPanelProvider);
+    final request =
+        state.incomingRequests.isNotEmpty ? state.incomingRequests.first : null;
+
+    if (request == null) {
+      return Scaffold(
+        appBar: AppBar(
+          title: const Text('Incoming Request'),
+          leading: BackButton(onPressed: () => context.pop()),
+        ),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.inbox_outlined, size: 56, color: Colors.grey),
+                const SizedBox(height: 12),
+                Text(
+                  'No delivery requests right now.',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'When an order is assigned to you, it will appear here.',
+                  style:
+                      theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final etaText = request.estimatedDeliveryTime == null
+        ? '—'
+        : request.estimatedDeliveryTime!.toLocal().toString().split('.').first;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        leading: BackButton(
-          onPressed: () => context.pop(),
-        ),
+        leading: BackButton(onPressed: () => context.pop()),
         actions: [
           Padding(
             padding: const EdgeInsets.all(16),
@@ -1974,7 +2227,7 @@ class IncomingOrderScreen extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            Container(color: Colors.black.withOpacity(0.3)),
+            Container(color: Colors.black.withOpacity(0.32)),
             SafeArea(
               child: SingleChildScrollView(
                 child: Padding(
@@ -2001,14 +2254,9 @@ class IncomingOrderScreen extends StatelessWidget {
                                       color: Colors.blue.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Text(
-                                      '45s',
-                                      style: TextStyle(
-                                        fontSize: 20,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.blue,
-                                      ),
-                                    ),
+                                    child: const Icon(
+                                        Icons.notifications_active,
+                                        color: Colors.blue),
                                   ),
                                   const SizedBox(width: 16),
                                   Expanded(
@@ -2017,7 +2265,7 @@ class IncomingOrderScreen extends StatelessWidget {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'INCOMING ORDER',
+                                          'INCOMING DELIVERY REQUEST',
                                           style: theme.textTheme.labelSmall
                                               ?.copyWith(
                                             color: Colors.grey,
@@ -2026,10 +2274,18 @@ class IncomingOrderScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          'Priority Express',
+                                          request.restaurantName,
                                           style: theme.textTheme.headlineSmall
                                               ?.copyWith(
                                             fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 6),
+                                        Text(
+                                          'Customer: ${request.customerName}',
+                                          style: theme.textTheme.bodyMedium
+                                              ?.copyWith(
+                                            color: Colors.grey[700],
                                           ),
                                         ),
                                       ],
@@ -2039,7 +2295,7 @@ class IncomingOrderScreen extends StatelessWidget {
                                     crossAxisAlignment: CrossAxisAlignment.end,
                                     children: [
                                       Text(
-                                        'EXPECTED PAY',
+                                        'PAY',
                                         style: theme.textTheme.labelSmall
                                             ?.copyWith(
                                           color: Colors.grey,
@@ -2048,7 +2304,7 @@ class IncomingOrderScreen extends StatelessWidget {
                                       ),
                                       const SizedBox(height: 4),
                                       Text(
-                                        '\.50',
+                                        '\$${request.deliveryFee.toStringAsFixed(2)}',
                                         style: theme.textTheme.headlineSmall
                                             ?.copyWith(
                                           fontWeight: FontWeight.bold,
@@ -2064,20 +2320,22 @@ class IncomingOrderScreen extends StatelessWidget {
                                 children: [
                                   Expanded(
                                     child: _buildInfoCard(
-                                        context,
-                                        Icons.straighten,
-                                        '2.4 mi',
-                                        'TOTAL TRIP',
-                                        theme),
+                                      context,
+                                      Icons.straighten,
+                                      '\$${request.totalAmount.toStringAsFixed(2)}',
+                                      'ORDER TOTAL',
+                                      theme,
+                                    ),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
                                     child: _buildInfoCard(
-                                        context,
-                                        Icons.schedule,
-                                        '8 min',
-                                        'EST. TIME',
-                                        theme),
+                                      context,
+                                      Icons.schedule,
+                                      etaText,
+                                      'EST. READY',
+                                      theme,
+                                    ),
                                   ),
                                 ],
                               ),
@@ -2103,10 +2361,8 @@ class IncomingOrderScreen extends StatelessWidget {
                                       color: Colors.blue.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Icon(
-                                      Icons.storefront,
-                                      color: Colors.blue,
-                                    ),
+                                    child: const Icon(Icons.storefront,
+                                        color: Colors.blue),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -2124,14 +2380,14 @@ class IncomingOrderScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          "Joe's Pizza",
+                                          request.restaurantName,
                                           style: theme.textTheme.bodyLarge
                                               ?.copyWith(
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                         Text(
-                                          '452 Broadway, Midtown',
+                                          request.customerAddress,
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
                                             color: Colors.grey,
@@ -2151,10 +2407,8 @@ class IncomingOrderScreen extends StatelessWidget {
                                       color: Colors.green.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(12),
                                     ),
-                                    child: const Icon(
-                                      Icons.location_on,
-                                      color: Colors.green,
-                                    ),
+                                    child: const Icon(Icons.location_on,
+                                        color: Colors.green),
                                   ),
                                   const SizedBox(width: 12),
                                   Expanded(
@@ -2163,7 +2417,7 @@ class IncomingOrderScreen extends StatelessWidget {
                                           CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          'DROP OFF',
+                                          'CUSTOMER',
                                           style: theme.textTheme.labelSmall
                                               ?.copyWith(
                                             color: Colors.grey,
@@ -2172,14 +2426,14 @@ class IncomingOrderScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(height: 4),
                                         Text(
-                                          '123 Maple St',
+                                          request.customerName,
                                           style: theme.textTheme.bodyLarge
                                               ?.copyWith(
                                             fontWeight: FontWeight.bold,
                                           ),
                                         ),
                                         Text(
-                                          'Suite 4B, Residential Heights',
+                                          request.customerPhone,
                                           style: theme.textTheme.bodySmall
                                               ?.copyWith(
                                             color: Colors.grey,
@@ -2190,6 +2444,14 @@ class IncomingOrderScreen extends StatelessWidget {
                                   ),
                                 ],
                               ),
+                              const SizedBox(height: 20),
+                              if (request.customerEmail.isNotEmpty &&
+                                  request.customerEmail != '-')
+                                Text(
+                                  'Customer email: ${request.customerEmail}',
+                                  style: theme.textTheme.bodySmall
+                                      ?.copyWith(color: Colors.grey),
+                                ),
                             ],
                           ),
                         ),
@@ -2199,34 +2461,46 @@ class IncomingOrderScreen extends StatelessWidget {
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton.icon(
-                          onPressed: () {
-                            context.push('/delivery-partner/order-accepted');
-                          },
-                          icon: const Icon(Icons.arrow_forward),
+                          onPressed: state.isLoading
+                              ? null
+                              : () async {
+                                  await ref
+                                      .read(deliveryPanelProvider.notifier)
+                                      .acceptIncomingRequest(request.id);
+                                  if (!context.mounted) return;
+                                  if (ref.read(deliveryPanelProvider).error ==
+                                      null) {
+                                    _showActionSnackBar(
+                                        context, 'Delivery accepted.');
+                                    context.push(
+                                        '/delivery-partner/order-accepted');
+                                  }
+                                },
+                          icon: const Icon(Icons.check_circle_outline),
                           label: const Text('Accept Delivery'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.blue,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
+                          style: _primaryActionStyle(color: Colors.blue),
                         ),
                       ),
                       const SizedBox(height: 12),
                       SizedBox(
                         width: double.infinity,
                         height: 56,
-                        child: OutlinedButton(
-                          onPressed: () {
-                            context.push('/delivery-partner/decline-order');
-                          },
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text(
+                        child: OutlinedButton.icon(
+                          onPressed: state.isLoading
+                              ? null
+                              : () async {
+                                  await ref
+                                      .read(deliveryPanelProvider.notifier)
+                                      .rejectIncomingRequest(request.id);
+                                  if (!context.mounted) return;
+                                  _showActionSnackBar(
+                                      context, 'Delivery declined.',
+                                      isError: true);
+                                  context.pop();
+                                },
+                          style: _secondaryActionStyle(context),
+                          icon: const Icon(Icons.close, color: Colors.grey),
+                          label: const Text(
                             'DECLINE ORDER',
                             style: TextStyle(color: Colors.grey),
                           ),
@@ -2264,6 +2538,191 @@ class IncomingOrderScreen extends StatelessWidget {
           const SizedBox(height: 4),
           Text(label,
               style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardHero extends StatelessWidget {
+  final String name;
+  final int activeDeliveries;
+  final int incomingRequests;
+  final double weeklyEarnings;
+  final VoidCallback onTakeDelivery;
+
+  const _DashboardHero({
+    required this.name,
+    required this.activeDeliveries,
+    required this.incomingRequests,
+    required this.weeklyEarnings,
+    required this.onTakeDelivery,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [Color(0xFF0F172A), Color(0xFF111827)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isNarrow = constraints.maxWidth < 700;
+
+          final stats = Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _HeroStatChip(
+                label: 'Active deliveries',
+                value: '$activeDeliveries',
+                icon: Icons.delivery_dining_outlined,
+              ),
+              _HeroStatChip(
+                label: 'Incoming requests',
+                value: '$incomingRequests',
+                icon: Icons.notifications_active_outlined,
+              ),
+              _HeroStatChip(
+                label: 'Weekly earnings',
+                value: '\$${weeklyEarnings.toStringAsFixed(2)}',
+                icon: Icons.account_balance_wallet_outlined,
+              ),
+            ],
+          );
+
+          final cta = SizedBox(
+            height: 52,
+            child: ElevatedButton.icon(
+              onPressed: onTakeDelivery,
+              icon: const Icon(Icons.local_shipping_outlined),
+              label: const Text('Review requests'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF0F9D58),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          );
+
+          if (isNarrow) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Welcome back, $name',
+                  style: theme.textTheme.headlineSmall?.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Everything you need to manage today’s deliveries in one place.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.white70,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                stats,
+                const SizedBox(height: 20),
+                cta,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Welcome back, $name',
+                      style: theme.textTheme.headlineSmall?.copyWith(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Everything you need to manage today’s deliveries in one place.',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: Colors.white70,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    stats,
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              cta,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HeroStatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+
+  const _HeroStatChip({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.white.withOpacity(0.10)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white70, size: 18),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2621,20 +3080,12 @@ class OrderAcceptedScreen extends StatelessWidget {
                           height: 56,
                           child: ElevatedButton.icon(
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Navigation started')),
-                              );
+                              _showActionSnackBar(
+                                  context, 'Navigation started');
                             },
                             icon: const Icon(Icons.navigation),
                             label: const Text('Start Navigation'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.blue,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                            style: _primaryActionStyle(color: Colors.blue),
                           ),
                         ),
                         const SizedBox(height: 8),
@@ -2643,20 +3094,12 @@ class OrderAcceptedScreen extends StatelessWidget {
                           height: 56,
                           child: OutlinedButton.icon(
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('Viewing pickup details')),
-                              );
+                              _showActionSnackBar(
+                                  context, 'Viewing pickup details');
                             },
                             icon: const Icon(Icons.info_outline),
                             label: const Text('View Pickup Details'),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.blue,
-                              side: const BorderSide(color: Colors.blue),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
+                            style: _secondaryActionStyle(context),
                           ),
                         ),
                       ],
