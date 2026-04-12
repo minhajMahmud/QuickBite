@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/app_providers.dart';
+import '../../../providers/app_providers.dart';
 import '../../../../data/datasources/offers_api_service.dart';
 
 class OffersSection extends ConsumerWidget {

@@ -1,8 +1,10 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'dart:typed_data';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
@@ -2053,6 +2055,15 @@ class _CompactOrderCard extends StatelessWidget {
           const SizedBox(height: 4),
           Text(order.items.join(', '),
               style: Theme.of(context).textTheme.bodySmall),
+          if ((order.deliveryPartnerName ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _AssignedPartnerChip(
+              name: order.deliveryPartnerName ?? '',
+              phone: order.deliveryPartnerPhone,
+              email: order.deliveryPartnerEmail,
+              compact: true,
+            ),
+          ],
           const SizedBox(height: 2),
           Text(order.timeAgo, style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 8),
@@ -2121,22 +2132,12 @@ class _ActiveOrderRow extends StatelessWidget {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               if ((order.deliveryPartnerName ?? '').trim().isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    'Assigned: ${order.deliveryPartnerName}',
-                    style: const TextStyle(
-                      color: Color(0xFF2563EB),
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                  ),
+                const SizedBox(height: 8),
+                _AssignedPartnerChip(
+                  name: order.deliveryPartnerName ?? '',
+                  phone: order.deliveryPartnerPhone,
+                  email: order.deliveryPartnerEmail,
+                  compact: true,
                 ),
               ],
             ],
@@ -2249,35 +2250,10 @@ class _OrderManagementCard extends ConsumerWidget {
               ),
               if ((order.deliveryPartnerName ?? '').trim().isNotEmpty) ...[
                 const SizedBox(height: 6),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 4,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF2563EB).withOpacity(0.10),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color: const Color(0xFF2563EB).withOpacity(0.25),
-                        ),
-                      ),
-                      child: Text(
-                        'Partner: ${order.deliveryPartnerName}',
-                        style: const TextStyle(
-                          color: Color(0xFF1D4ED8),
-                          fontWeight: FontWeight.w600,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                    if ((order.deliveryPartnerPhone ?? '').trim().isNotEmpty)
-                      Text(
-                        '☎ ${order.deliveryPartnerPhone}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                  ],
+                _AssignedPartnerChip(
+                  name: order.deliveryPartnerName ?? '',
+                  phone: order.deliveryPartnerPhone,
+                  email: order.deliveryPartnerEmail,
                 ),
               ],
             ],
@@ -2837,6 +2813,215 @@ class _EmptyText extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+    );
+  }
+}
+
+class _AssignedPartnerChip extends StatelessWidget {
+  final String name;
+  final String? phone;
+  final String? email;
+  final bool compact;
+
+  const _AssignedPartnerChip({
+    required this.name,
+    this.phone,
+    this.email,
+    this.compact = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasPhone = (phone ?? '').trim().isNotEmpty;
+    final hasEmail = (email ?? '').trim().isNotEmpty;
+    final label = compact ? name : 'Partner: $name';
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(999),
+        onTap: () {
+          showDialog<void>(
+            context: context,
+            builder: (dialogContext) {
+              final phoneText = phone?.trim() ?? '';
+              final emailText = email?.trim() ?? '';
+
+              return AlertDialog(
+                title: const Text('Assigned Delivery Partner'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: Theme.of(dialogContext)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 10),
+                    if (hasPhone)
+                      Text(
+                        'Phone: $phoneText',
+                        style: Theme.of(dialogContext).textTheme.bodyMedium,
+                      ),
+                    if (hasEmail)
+                      Text(
+                        'Email: $emailText',
+                        style: Theme.of(dialogContext).textTheme.bodyMedium,
+                      ),
+                    if (!hasPhone && !hasEmail)
+                      const Text('No contact details available.'),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        if (hasPhone)
+                          OutlinedButton.icon(
+                            onPressed: () => _copyValue(
+                              context: dialogContext,
+                              label: 'Phone',
+                              value: phoneText,
+                            ),
+                            icon: const Icon(Icons.copy, size: 16),
+                            label: const Text('Copy phone'),
+                          ),
+                        if (hasPhone)
+                          ElevatedButton.icon(
+                            onPressed: () => _openUri(
+                              context: dialogContext,
+                              uri: Uri.parse('tel:$phoneText'),
+                              failureMessage:
+                                  'Could not open phone app on this device.',
+                            ),
+                            icon: const Icon(Icons.call, size: 16),
+                            label: const Text('Call'),
+                          ),
+                        if (hasEmail)
+                          OutlinedButton.icon(
+                            onPressed: () => _copyValue(
+                              context: dialogContext,
+                              label: 'Email',
+                              value: emailText,
+                            ),
+                            icon: const Icon(Icons.copy, size: 16),
+                            label: const Text('Copy email'),
+                          ),
+                        if (hasEmail)
+                          ElevatedButton.icon(
+                            onPressed: () => _openUri(
+                              context: dialogContext,
+                              uri: Uri.parse('mailto:$emailText'),
+                              failureMessage:
+                                  'Could not open email app on this device.',
+                            ),
+                            icon: const Icon(Icons.email_outlined, size: 16),
+                            label: const Text('Email'),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Close'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2563EB).withOpacity(0.10),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: const Color(0xFF2563EB).withOpacity(0.25),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 11,
+                backgroundColor: const Color(0xFF1D4ED8),
+                child: Text(
+                  _initials(name),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF1D4ED8),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+              if (hasPhone && !compact) ...[
+                const SizedBox(width: 8),
+                Text(
+                  '☎ ${phone!.trim()}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (hasEmail && !compact) ...[
+                const SizedBox(width: 8),
+                const Icon(
+                  Icons.info_outline,
+                  size: 14,
+                  color: Color(0xFF1D4ED8),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _initials(String value) {
+    final parts =
+        value.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty).toList();
+
+    if (parts.isEmpty) return 'DP';
+    if (parts.length == 1) return parts.first.substring(0, 1).toUpperCase();
+
+    final first = parts.first.substring(0, 1).toUpperCase();
+    final last = parts.last.substring(0, 1).toUpperCase();
+    return '$first$last';
+  }
+
+  Future<void> _copyValue({
+    required BuildContext context,
+    required String label,
+    required String value,
+  }) async {
+    await Clipboard.setData(ClipboardData(text: value));
+    if (!context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text('$label copied to clipboard')),
+    );
+  }
+
+  Future<void> _openUri({
+    required BuildContext context,
+    required Uri uri,
+    required String failureMessage,
+  }) async {
+    final opened = await launchUrl(uri);
+    if (opened || !context.mounted) return;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(content: Text(failureMessage)),
     );
   }
 }
