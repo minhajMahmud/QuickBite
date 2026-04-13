@@ -702,13 +702,31 @@ async function getDeliveryDashboardForUser(userId) {
       o.created_at AS order_created_at,
       o.delivery_address_id,
       r.name AS restaurant_name,
+      r.latitude AS restaurant_latitude,
+      r.longitude AS restaurant_longitude,
       cu.name AS customer_name,
       cu.email AS customer_email,
       cu.phone AS customer_phone,
       ua.street_address,
       ua.city,
       ua.state,
-      ua.postal_code
+      ua.postal_code,
+      ua.latitude AS customer_latitude,
+      ua.longitude AS customer_longitude,
+      (
+        SELECT COALESCE(
+          json_agg(
+            json_build_object(
+              'name', COALESCE(fi.name, 'Item'),
+              'quantity', COALESCE(oi.quantity, 1)
+            )
+          ),
+          '[]'::json
+        )
+        FROM order_items oi
+        LEFT JOIN food_items fi ON fi.id = oi.food_item_id
+        WHERE oi.order_id = o.id
+      ) AS order_items
     FROM delivery_requests dr
     JOIN orders o ON o.id = dr.order_id
     LEFT JOIN restaurants r ON r.id = o.restaurant_id
@@ -743,13 +761,31 @@ async function getDeliveryDashboardForUser(userId) {
       o.created_at AS order_created_at,
       o.delivery_address_id,
       r.name AS restaurant_name,
+      r.latitude AS restaurant_latitude,
+      r.longitude AS restaurant_longitude,
       cu.name AS customer_name,
       cu.email AS customer_email,
       cu.phone AS customer_phone,
       ua.street_address,
       ua.city,
       ua.state,
-      ua.postal_code
+      ua.postal_code,
+      ua.latitude AS customer_latitude,
+      ua.longitude AS customer_longitude,
+      (
+        SELECT COALESCE(
+          json_agg(
+            json_build_object(
+              'name', COALESCE(fi.name, 'Item'),
+              'quantity', COALESCE(oi.quantity, 1)
+            )
+          ),
+          '[]'::json
+        )
+        FROM order_items oi
+        LEFT JOIN food_items fi ON fi.id = oi.food_item_id
+        WHERE oi.order_id = o.id
+      ) AS order_items
     FROM delivery_requests dr
     JOIN orders o ON o.id = dr.order_id
     LEFT JOIN restaurants r ON r.id = o.restaurant_id
@@ -897,10 +933,15 @@ async function getDeliveryDashboardForUser(userId) {
       order: {
         id: row.order_id,
         restaurantName: row.restaurant_name,
+        restaurantLatitude: row.restaurant_latitude,
+        restaurantLongitude: row.restaurant_longitude,
         customerName: row.customer_name,
         customerEmail: row.customer_email,
         customerPhone: row.customer_phone,
         customerAddress: addressParts.join(', ') || null,
+        customerLatitude: row.customer_latitude,
+        customerLongitude: row.customer_longitude,
+        items: Array.isArray(row.order_items) ? row.order_items : [],
         totalAmount: Number(row.total_amount || 0),
         deliveryFee: Number(row.delivery_fee || 0),
         status: row.order_status,

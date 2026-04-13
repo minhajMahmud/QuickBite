@@ -332,18 +332,25 @@ class AppRoutes {
           ),
           GoRoute(
             path: 'incoming-order',
-            builder: (context, state) => const IncomingOrderScreen(),
+            builder: (context, state) => const DeliveryOrdersScreen(),
             name: 'incoming-order',
           ),
           GoRoute(
             path: 'decline-order',
-            builder: (context, state) => const DeclineOrderScreen(),
+            builder: (context, state) => const DeliveryOrdersScreen(),
             name: 'decline-order',
           ),
           GoRoute(
             path: 'order-accepted',
-            builder: (context, state) => const OrderAcceptedScreen(),
+            builder: (context, state) => const DeliveryOrdersScreen(),
             name: 'order-accepted',
+          ),
+          GoRoute(
+            path: 'live-navigation',
+            builder: (context, state) => DeliveryLiveNavigationScreen(
+              orderId: state.uri.queryParameters['orderId'],
+            ),
+            name: 'delivery-live-navigation',
           ),
         ],
       ),

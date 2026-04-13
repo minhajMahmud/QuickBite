@@ -58,12 +58,19 @@ class DeliveryPartnerProfile {
 /// Active Delivery
 class ActiveDelivery {
   final String id;
+  final String? orderId;
   final String restaurantName;
   final String customerName;
+  final String? customerPhone;
   final String customerAddress;
   final double estimatedEarning;
   final String pickupLocation;
   final String dropLocation;
+  final double? pickupLatitude;
+  final double? pickupLongitude;
+  final double? dropLatitude;
+  final double? dropLongitude;
+  final List<String> orderItems;
   final String
       status; // 'picked_up', 'confirmed', 'in_transit', 'delivered', 'cancelled'
   final String? otp;
@@ -71,12 +78,19 @@ class ActiveDelivery {
 
   ActiveDelivery({
     required this.id,
+    this.orderId,
     required this.restaurantName,
     required this.customerName,
+    this.customerPhone,
     required this.customerAddress,
     required this.estimatedEarning,
     required this.pickupLocation,
     required this.dropLocation,
+    this.pickupLatitude,
+    this.pickupLongitude,
+    this.dropLatitude,
+    this.dropLongitude,
+    this.orderItems = const [],
     required this.status,
     this.otp,
     required this.createdAt,
@@ -84,24 +98,38 @@ class ActiveDelivery {
 
   ActiveDelivery copyWith({
     String? id,
+    String? orderId,
     String? restaurantName,
     String? customerName,
+    String? customerPhone,
     String? customerAddress,
     double? estimatedEarning,
     String? pickupLocation,
     String? dropLocation,
+    double? pickupLatitude,
+    double? pickupLongitude,
+    double? dropLatitude,
+    double? dropLongitude,
+    List<String>? orderItems,
     String? status,
     String? otp,
     DateTime? createdAt,
   }) {
     return ActiveDelivery(
       id: id ?? this.id,
+      orderId: orderId ?? this.orderId,
       restaurantName: restaurantName ?? this.restaurantName,
       customerName: customerName ?? this.customerName,
+      customerPhone: customerPhone ?? this.customerPhone,
       customerAddress: customerAddress ?? this.customerAddress,
       estimatedEarning: estimatedEarning ?? this.estimatedEarning,
       pickupLocation: pickupLocation ?? this.pickupLocation,
       dropLocation: dropLocation ?? this.dropLocation,
+      pickupLatitude: pickupLatitude ?? this.pickupLatitude,
+      pickupLongitude: pickupLongitude ?? this.pickupLongitude,
+      dropLatitude: dropLatitude ?? this.dropLatitude,
+      dropLongitude: dropLongitude ?? this.dropLongitude,
+      orderItems: orderItems ?? this.orderItems,
       status: status ?? this.status,
       otp: otp ?? this.otp,
       createdAt: createdAt ?? this.createdAt,
@@ -266,6 +294,12 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
     return double.tryParse(value?.toString() ?? '') ?? 0;
   }
 
+  double? _asNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
   int _asInt(dynamic value) {
     if (value is int) return value;
     return int.tryParse(value?.toString() ?? '') ?? 0;
@@ -323,15 +357,35 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
           final nestedOrder = order['order'] is Map<String, dynamic>
               ? Map<String, dynamic>.from(order['order'] as Map)
               : <String, dynamic>{};
+            final nestedItems = nestedOrder['items'] is List
+              ? List<Map<String, dynamic>>.from(
+                (nestedOrder['items'] as List)
+                  .whereType<Map>()
+                  .map((e) => Map<String, dynamic>.from(e)),
+              )
+              : <Map<String, dynamic>>[];
+
+            final orderItems = nestedItems
+              .map((item) {
+              final name = item['name']?.toString() ?? 'Item';
+              final qty = _asInt(item['quantity'] ?? 1);
+              return '$qty x $name';
+              })
+              .where((line) => line.trim().isNotEmpty)
+              .toList();
+
           final status = order['status']?.toString() ?? 'confirmed';
           return ActiveDelivery(
             id: order['id']?.toString() ?? '',
+            orderId: nestedOrder['id']?.toString(),
             restaurantName: order['restaurantName']?.toString() ??
                 nestedOrder['restaurantName']?.toString() ??
                 'Restaurant',
             customerName: order['customerName']?.toString() ??
                 nestedOrder['customerName']?.toString() ??
                 _customerLabel(order),
+            customerPhone: order['customerPhone']?.toString() ??
+              nestedOrder['customerPhone']?.toString(),
             customerAddress: order['customerAddress']?.toString() ??
                 nestedOrder['customerAddress']?.toString() ??
                 'N/A',
@@ -351,6 +405,13 @@ class DeliveryPanelNotifier extends StateNotifier<DeliveryPanelState> {
                 order['customerAddress']?.toString() ??
                 nestedOrder['customerAddress']?.toString() ??
                 'Drop-off location',
+            pickupLatitude: _asNullableDouble(nestedOrder['restaurantLatitude']),
+            pickupLongitude: _asNullableDouble(
+              nestedOrder['restaurantLongitude'],
+            ),
+            dropLatitude: _asNullableDouble(nestedOrder['customerLatitude']),
+            dropLongitude: _asNullableDouble(nestedOrder['customerLongitude']),
+            orderItems: orderItems,
             status: status,
             otp: order['otp']?.toString(),
             createdAt: _parseDate(order['createdAt'] ??

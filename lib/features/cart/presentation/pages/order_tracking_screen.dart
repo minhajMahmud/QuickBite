@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -43,6 +44,12 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
   String? _error;
   Map<String, dynamic>? _order;
   int _selectedPaymentMethod = 0;
+
+  bool get _supportsNativeMap {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
 
   @override
   void initState() {
@@ -386,16 +393,35 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
               borderRadius: BorderRadius.circular(16),
               child: SizedBox(
                 height: 220,
-                child: GoogleMap(
-                  initialCameraPosition: CameraPosition(
-                    target: cameraCenter,
-                    zoom: 13.5,
-                  ),
-                  markers: markers,
-                  polylines: polylines,
-                  myLocationButtonEnabled: false,
-                  zoomControlsEnabled: false,
-                ),
+                child: _supportsNativeMap
+                    ? GoogleMap(
+                        initialCameraPosition: CameraPosition(
+                          target: cameraCenter,
+                          zoom: 13.5,
+                        ),
+                        markers: markers,
+                        polylines: polylines,
+                        myLocationButtonEnabled: false,
+                        zoomControlsEnabled: false,
+                      )
+                    : Container(
+                        color: Theme.of(context).cardColor,
+                        alignment: Alignment.center,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(Icons.map_outlined, size: 44),
+                              SizedBox(height: 8),
+                              Text(
+                                'Map preview is not available on Windows desktop.\nLive order status is still updating.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
               ),
             ),
             const SizedBox(height: 10),

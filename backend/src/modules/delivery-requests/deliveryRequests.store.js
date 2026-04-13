@@ -109,11 +109,12 @@ async function listAvailableDeliveryPartners() {
       u.name,
       u.email,
       u.phone,
-      u.rating,
-      u.total_deliveries,
-      u.vehicle_type,
-      u.vehicle_number
+      COALESCE(da.rating, 0)::numeric AS rating,
+      COALESCE(da.total_deliveries, 0)::int AS total_deliveries,
+      da.vehicle_type,
+      da.vehicle_number
     FROM users u
+    LEFT JOIN delivery_agents da ON LOWER(da.email) = LOWER(u.email)
     WHERE u.deleted_at IS NULL
       AND u.role = 'delivery_partner'
       AND u.approved = TRUE
@@ -238,16 +239,17 @@ async function listIncomingRequestsForPartner(partnerId) {
       dp.name AS delivery_partner_name,
       dp.email AS delivery_partner_email,
       dp.phone AS delivery_partner_phone,
-      dp.rating AS delivery_partner_rating,
-      dp.total_deliveries AS delivery_partner_total_deliveries,
-      dp.vehicle_type AS delivery_partner_vehicle_type,
-      dp.vehicle_number AS delivery_partner_vehicle_number
+      COALESCE(da.rating, 0)::numeric AS delivery_partner_rating,
+      COALESCE(da.total_deliveries, 0)::int AS delivery_partner_total_deliveries,
+      da.vehicle_type AS delivery_partner_vehicle_type,
+      da.vehicle_number AS delivery_partner_vehicle_number
     FROM delivery_requests dr
     JOIN orders o ON o.id = dr.order_id
     LEFT JOIN restaurants r ON r.id = o.restaurant_id
     LEFT JOIN users cu ON cu.id = o.user_id
     LEFT JOIN user_addresses ua ON ua.id = o.delivery_address_id
     LEFT JOIN users dp ON dp.id = dr.delivery_partner_id
+    LEFT JOIN delivery_agents da ON LOWER(da.email) = LOWER(dp.email)
     WHERE dr.delivery_partner_id = $1
       AND dr.status = 'pending'
       AND o.deleted_at IS NULL
@@ -291,12 +293,13 @@ async function getAcceptedRequestForOrder(orderId) {
       dp.name AS delivery_partner_name,
       dp.email AS delivery_partner_email,
       dp.phone AS delivery_partner_phone,
-      dp.rating AS delivery_partner_rating,
-      dp.total_deliveries AS delivery_partner_total_deliveries,
-      dp.vehicle_type AS delivery_partner_vehicle_type,
-      dp.vehicle_number AS delivery_partner_vehicle_number
+      COALESCE(da.rating, 0)::numeric AS delivery_partner_rating,
+      COALESCE(da.total_deliveries, 0)::int AS delivery_partner_total_deliveries,
+      da.vehicle_type AS delivery_partner_vehicle_type,
+      da.vehicle_number AS delivery_partner_vehicle_number
     FROM delivery_requests dr
     JOIN users dp ON dp.id = dr.delivery_partner_id
+    LEFT JOIN delivery_agents da ON LOWER(da.email) = LOWER(dp.email)
     WHERE dr.order_id = $1
       AND dr.status = 'accepted'
     ORDER BY dr.accepted_at DESC NULLS LAST, dr.updated_at DESC

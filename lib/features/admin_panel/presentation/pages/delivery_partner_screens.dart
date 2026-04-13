@@ -1,9 +1,15 @@
 import 'package:fl_chart/fl_chart.dart';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../../presentation/providers/app_providers.dart';
+import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
 import '../../../authentication/presentation/providers/auth_provider.dart';
+import '../../../authentication/data/services/api_client.dart';
 
 import '../providers/delivery_panel_provider.dart';
 
@@ -91,6 +97,46 @@ ButtonStyle _secondaryActionStyle(BuildContext context) {
   );
 }
 
+class _DeliveryNavItem {
+  final String route;
+  final String label;
+  final IconData icon;
+
+  const _DeliveryNavItem({
+    required this.route,
+    required this.label,
+    required this.icon,
+  });
+}
+
+const List<_DeliveryNavItem> _deliveryNavItems = [
+  _DeliveryNavItem(
+    route: '/delivery-partner',
+    label: 'Home',
+    icon: Icons.home_outlined,
+  ),
+  _DeliveryNavItem(
+    route: '/delivery-partner/earnings',
+    label: 'Earnings',
+    icon: Icons.attach_money_outlined,
+  ),
+  _DeliveryNavItem(
+    route: '/delivery-partner/orders',
+    label: 'Orders',
+    icon: Icons.receipt_long_outlined,
+  ),
+  _DeliveryNavItem(
+    route: '/delivery-partner/live-navigation',
+    label: 'Live',
+    icon: Icons.gps_fixed_outlined,
+  ),
+  _DeliveryNavItem(
+    route: '/delivery-partner/settings',
+    label: 'Settings',
+    icon: Icons.settings_outlined,
+  ),
+];
+
 /// Admin Delivery Report Screen
 class DeliveryDashboardScreen extends ConsumerWidget {
   const DeliveryDashboardScreen({Key? key}) : super(key: key);
@@ -124,10 +170,10 @@ class DeliveryDashboardScreen extends ConsumerWidget {
         height: 52,
         child: ElevatedButton.icon(
           onPressed: () {
-            context.push('/delivery-partner/incoming-order');
+            context.push('/delivery-partner/orders');
           },
-          icon: const Icon(Icons.local_shipping),
-          label: const Text('Take New Delivery'),
+          icon: const Icon(Icons.list_alt_outlined),
+          label: const Text('View All Orders'),
           style: _primaryActionStyle(color: const Color(0xFF0F9D58)),
         ),
       ),
@@ -141,7 +187,7 @@ class DeliveryDashboardScreen extends ConsumerWidget {
               incomingRequests: state.incomingRequests.length,
               weeklyEarnings: state.weeklyEarnings,
               onTakeDelivery: () {
-                context.push('/delivery-partner/incoming-order');
+                context.push('/delivery-partner/orders');
               },
             ),
           ),
@@ -381,58 +427,290 @@ class DeliverySettingsScreen extends ConsumerWidget {
   }
 }
 
-/// Orders Screen - Shows all pending orders
-class DeliveryOrdersScreen extends ConsumerWidget {
+class _UnifiedDeliveryOrder {
+  final String id;
+  final String orderId;
+  final String source; // incoming | active
+  final String requestId;
+  final String restaurantName;
+  final String customerName;
+  final String customerAddress;
+  final double estimatedEarning;
+  final String status;
+  final DateTime createdAt;
+
+  const _UnifiedDeliveryOrder({
+    required this.id,
+    required this.orderId,
+    required this.source,
+    required this.requestId,
+    required this.restaurantName,
+    required this.customerName,
+    required this.customerAddress,
+    required this.estimatedEarning,
+    required this.status,
+    required this.createdAt,
+  });
+}
+
+/// Orders Screen - Unified incoming/pending/accepted/rejected in one page
+class DeliveryOrdersScreen extends ConsumerStatefulWidget {
   const DeliveryOrdersScreen({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DeliveryOrdersScreen> createState() =>
+      _DeliveryOrdersScreenState();
+}
+
+class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
+  String _selectedFilter = 'all';
+  String _searchQuery = '';
+
+  bool _isAcceptedStatus(String status) {
+    return status == 'confirmed' ||
+        status == 'picked_up' ||
+        status == 'in_transit';
+  }
+
+  bool _isRejectedStatus(String status) {
+    return status == 'cancelled' || status == 'rejected' || status == 'declined';
+  }
+
+  Future<String?> _askRejectReason(BuildContext context) async {
+    final controller = TextEditingController();
+    String selected = 'Customer unreachable';
+    final preset = <String>[
+      'Customer unreachable',
+      'Location too far',
+      'Safety concern',
+      'Vehicle issue',
+      'Other',
+    ];
+
+    final result = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (dialogContext, setModalState) {
+            return AlertDialog(
+              title: const Text('Cancel / Reject Reason'),
+              content: SizedBox(
+                width: 440,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    DropdownButtonFormField<String>(
+                      value: selected,
+                      items: preset
+                          .map((reason) => DropdownMenuItem<String>(
+                                value: reason,
+                                child: Text(reason),
+                              ))
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+                        setModalState(() => selected = value);
+                      },
+                      decoration: const InputDecoration(
+                        labelText: 'Select reason',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: controller,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Additional note (optional)',
+                        hintText: 'Write details...',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Close'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final note = controller.text.trim();
+                    final reason = note.isEmpty ? selected : '$selected: $note';
+                    Navigator.pop(dialogContext, reason);
+                  },
+                  child: const Text('Submit'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return result;
+  }
+
+  String _filterKeyForOrder(_UnifiedDeliveryOrder order) {
+    if (order.status == 'incoming') return 'incoming';
+    if (_isRejectedStatus(order.status)) return 'rejected';
+    if (_isAcceptedStatus(order.status)) return 'accepted';
+    if (order.status == 'pending' || order.status == 'new') return 'pending';
+    return 'pending';
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(deliveryPanelProvider);
+    final notifier = ref.read(deliveryPanelProvider.notifier);
+
+    final unifiedOrders = <_UnifiedDeliveryOrder>[
+      ...state.incomingRequests.map(
+        (request) => _UnifiedDeliveryOrder(
+          id: request.orderId.isNotEmpty ? request.orderId : request.id,
+          orderId: request.orderId,
+          source: 'incoming',
+          requestId: request.id,
+          restaurantName: request.restaurantName,
+          customerName: request.customerName,
+          customerAddress: request.customerAddress,
+          estimatedEarning: request.deliveryFee,
+          status: 'incoming',
+          createdAt: request.createdAt,
+        ),
+      ),
+      ...state.activeDeliveries.map(
+        (delivery) => _UnifiedDeliveryOrder(
+          id: delivery.id,
+          orderId: delivery.orderId ?? '',
+          source: 'active',
+          requestId: '',
+          restaurantName: delivery.restaurantName,
+          customerName: delivery.customerName,
+          customerAddress: delivery.customerAddress,
+          estimatedEarning: delivery.estimatedEarning,
+          status: delivery.status,
+          createdAt: delivery.createdAt,
+        ),
+      ),
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    final incomingCount =
+        unifiedOrders.where((order) => order.status == 'incoming').length;
+    final pendingCount = unifiedOrders
+        .where((order) => order.status == 'pending' || order.status == 'new')
+        .length;
+    final acceptedCount = unifiedOrders
+        .where((order) => _isAcceptedStatus(order.status))
+        .length;
+    final rejectedCount =
+        unifiedOrders.where((order) => _isRejectedStatus(order.status)).length;
+
+    final hasAccepted = acceptedCount > 0;
+    final firstAcceptedOrderId = unifiedOrders
+      .where((order) => _isAcceptedStatus(order.status))
+      .map((order) => order.orderId)
+      .firstWhere((id) => id.isNotEmpty, orElse: () => '');
+
+    final query = _searchQuery.trim().toLowerCase();
+    final filteredOrders = unifiedOrders.where((order) {
+      final statusKey = _filterKeyForOrder(order);
+      final passesStatus = _selectedFilter == 'all' || statusKey == _selectedFilter;
+
+      if (!passesStatus) return false;
+      if (query.isEmpty) return true;
+
+      return order.id.toLowerCase().contains(query) ||
+          order.restaurantName.toLowerCase().contains(query) ||
+          order.customerName.toLowerCase().contains(query) ||
+          order.customerAddress.toLowerCase().contains(query) ||
+          order.status.toLowerCase().contains(query);
+    }).toList();
 
     return DeliveryPanelScaffold(
       currentRoute: '/delivery-partner/orders',
-      title: 'Pending Orders',
-      subtitle: 'Active delivery orders',
+      title: 'All Orders',
+      subtitle: 'Incoming, pending, accepted and rejected in one page',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _PanelCard(
-            child: _SectionIntroCard(
-              icon: Icons.assignment_turned_in_outlined,
-              title: 'Orders Command Center',
-              description:
-                  'Review active jobs, monitor status movement, and act quickly on order events.',
-              accentColor: const Color(0xFF2563EB),
+          if (hasAccepted) ...[
+            _PanelCard(
+              title: 'Accepted Order Activity',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'You have accepted orders. Start navigation and stay online for live updates.',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          final route = firstAcceptedOrderId.isNotEmpty
+                              ? '/delivery-partner/live-navigation?orderId=${Uri.encodeComponent(firstAcceptedOrderId)}'
+                              : '/delivery-partner/live-navigation';
+                          context.push(route);
+                        },
+                        icon: const Icon(Icons.navigation_outlined),
+                        label: const Text('Start Navigation'),
+                        style:
+                            _primaryActionStyle(color: const Color(0xFF0F9D58)),
+                      ),
+                      const SizedBox(width: 14),
+                      Text(
+                        'Online Activity',
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleSmall
+                            ?.copyWith(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(width: 8),
+                      Switch(
+                        value: state.profile.isActive,
+                        onChanged: (value) {
+                          notifier.updateProfile(
+                            state.profile.copyWith(isActive: value),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 24),
+            const SizedBox(height: 24),
+          ],
           LayoutBuilder(
             builder: (context, constraints) {
               final isNarrow = constraints.maxWidth < 760;
               final stats = [
                 _OrderStatCard(
-                  icon: Icons.local_shipping,
-                  value: state.activeDeliveries.length.toString(),
-                  label: 'Total Orders',
+                  icon: Icons.inbox_outlined,
+                  value: incomingCount.toString(),
+                  label: 'Incoming',
                   color: const Color(0xFF2563EB),
                 ),
                 _OrderStatCard(
                   icon: Icons.hourglass_bottom,
-                  value: state.activeDeliveries
-                      .where((d) => d.status == 'pending')
-                      .length
-                      .toString(),
+                  value: pendingCount.toString(),
                   label: 'Pending',
                   color: const Color(0xFFF59E0B),
                 ),
                 _OrderStatCard(
-                  icon: Icons.check_circle,
-                  value: state.activeDeliveries
-                      .where((d) => d.status == 'confirmed')
-                      .length
-                      .toString(),
-                  label: 'Confirmed',
+                  icon: Icons.check_circle_outline,
+                  value: acceptedCount.toString(),
+                  label: 'Accepted',
                   color: const Color(0xFF10B981),
+                ),
+                _OrderStatCard(
+                  icon: Icons.cancel_outlined,
+                  value: rejectedCount.toString(),
+                  label: 'Rejected',
+                  color: const Color(0xFFE11D48),
                 ),
               ];
 
@@ -457,10 +735,64 @@ class DeliveryOrdersScreen extends ConsumerWidget {
               );
             },
           ),
+          const SizedBox(height: 16),
+          _PanelCard(
+            title: 'Filter & Search',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in const [
+                      {'key': 'all', 'label': 'All'},
+                      {'key': 'incoming', 'label': 'Incoming'},
+                      {'key': 'pending', 'label': 'Pending'},
+                      {'key': 'accepted', 'label': 'Accepted'},
+                      {'key': 'rejected', 'label': 'Rejected'},
+                    ])
+                      ChoiceChip(
+                        label: Text(entry['label']!),
+                        selected: _selectedFilter == entry['key'],
+                        onSelected: (_) {
+                          setState(() {
+                            _selectedFilter = entry['key']!;
+                          });
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  decoration: InputDecoration(
+                    hintText:
+                        'Search by order id, restaurant, customer or address',
+                    prefixIcon: const Icon(Icons.search),
+                    suffixIcon: _searchQuery.isEmpty
+                        ? null
+                        : IconButton(
+                            onPressed: () {
+                              setState(() {
+                                _searchQuery = '';
+                              });
+                            },
+                            icon: const Icon(Icons.close),
+                          ),
+                  ),
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+          ),
           const SizedBox(height: 24),
           _PanelCard(
-            title: 'All Active Orders',
-            child: state.activeDeliveries.isEmpty
+            title: 'Order List',
+            child: filteredOrders.isEmpty
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(32),
@@ -473,16 +805,8 @@ class DeliveryOrdersScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'No active orders',
+                            'No orders found for current filter/search',
                             style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Start taking deliveries to see them here',
-                            style:
-                                Theme.of(context).textTheme.bodySmall?.copyWith(
-                                      color: Colors.grey,
-                                    ),
                           ),
                         ],
                       ),
@@ -499,19 +823,24 @@ class DeliveryOrdersScreen extends ConsumerWidget {
                         DataColumn(label: Text('Earning')),
                         DataColumn(label: Text('Actions')),
                       ],
-                      rows: state.activeDeliveries.map((delivery) {
-                        final isConfirmed = delivery.status == 'confirmed';
-                        final isPending = delivery.status == 'pending';
+                      rows: filteredOrders.map((order) {
+                        final statusColor = order.status == 'incoming'
+                            ? const Color(0xFF2563EB)
+                            : _isAcceptedStatus(order.status)
+                                ? const Color(0xFF10B981)
+                                : _isRejectedStatus(order.status)
+                                    ? const Color(0xFFE11D48)
+                                    : const Color(0xFFF59E0B);
 
                         return DataRow(
                           cells: [
                             DataCell(Text(
-                              delivery.id,
+                              order.id,
                               style:
                                   const TextStyle(fontWeight: FontWeight.w600),
                             )),
-                            DataCell(Text(delivery.restaurantName)),
-                            DataCell(Text(delivery.customerName)),
+                            DataCell(Text(order.restaurantName)),
+                            DataCell(Text(order.customerName)),
                             DataCell(
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -519,75 +848,88 @@ class DeliveryOrdersScreen extends ConsumerWidget {
                                   vertical: 6,
                                 ),
                                 decoration: BoxDecoration(
-                                  color: isConfirmed
-                                      ? Colors.green.withOpacity(0.1)
-                                      : isPending
-                                          ? Colors.orange.withOpacity(0.1)
-                                          : Colors.blue.withOpacity(0.1),
+                                  color: statusColor.withOpacity(0.12),
                                   borderRadius: BorderRadius.circular(8),
                                 ),
                                 child: Text(
-                                  delivery.status.toUpperCase(),
+                                  order.status.toUpperCase(),
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w700,
-                                    color: isConfirmed
-                                        ? Colors.green
-                                        : isPending
-                                            ? Colors.orange
-                                            : Colors.blue,
+                                    color: statusColor,
                                   ),
                                 ),
                               ),
                             ),
-                            DataCell(Text(
-                                '\$${delivery.estimatedEarning.toStringAsFixed(2)}')),
                             DataCell(
-                              PopupMenuButton<String>(
-                                tooltip: 'Actions',
-                                onSelected: (value) {
-                                  if (value == 'confirm' && isPending) {
-                                    ref
-                                        .read(deliveryPanelProvider.notifier)
-                                        .confirmDelivery(delivery.id);
-                                    _showActionSnackBar(
-                                        context, 'Order confirmed');
-                                  } else if (value == 'cancel') {
-                                    ref
-                                        .read(deliveryPanelProvider.notifier)
-                                        .cancelDelivery(delivery.id);
-                                    _showActionSnackBar(
-                                        context, 'Order cancelled',
-                                        isError: true);
-                                  }
-                                },
-                                itemBuilder: (context) => [
-                                  if (isPending)
-                                    const PopupMenuItem(
-                                      value: 'confirm',
-                                      child: Row(
-                                        children: [
-                                          Icon(Icons.check, size: 18),
-                                          SizedBox(width: 8),
-                                          Text('Confirm'),
-                                        ],
-                                      ),
+                              Text('\$${order.estimatedEarning.toStringAsFixed(2)}'),
+                            ),
+                            DataCell(
+                              Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  if (order.status == 'incoming' ||
+                                      order.status == 'pending' ||
+                                      order.status == 'new')
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        if (order.source == 'incoming') {
+                                          await notifier
+                                              .acceptIncomingRequest(order.requestId);
+                                        } else {
+                                          notifier.confirmDelivery(order.id);
+                                        }
+                                        if (!context.mounted) return;
+                                        _showActionSnackBar(
+                                            context, 'Order accepted');
+                                      },
+                                      child: const Text('Accept'),
                                     ),
-                                  const PopupMenuItem(
-                                    value: 'cancel',
-                                    child: Row(
-                                      children: [
-                                        Icon(Icons.close,
-                                            size: 18, color: Colors.red),
-                                        SizedBox(width: 8),
-                                        Text('Cancel',
-                                            style:
-                                                TextStyle(color: Colors.red)),
-                                      ],
+                                  if (order.status == 'incoming' ||
+                                      order.status == 'pending' ||
+                                      order.status == 'new')
+                                    OutlinedButton(
+                                      onPressed: () async {
+                                        final reason =
+                                            await _askRejectReason(context);
+                                        if (reason == null || reason.isEmpty) {
+                                          return;
+                                        }
+
+                                        if (order.source == 'incoming') {
+                                          await notifier.rejectIncomingRequest(
+                                            order.requestId,
+                                            reason: reason,
+                                          );
+                                        } else {
+                                          notifier.cancelDelivery(order.id);
+                                        }
+
+                                        if (!context.mounted) return;
+                                        _showActionSnackBar(
+                                          context,
+                                          'Rejected with reason: $reason',
+                                          isError: true,
+                                        );
+                                      },
+                                      child: const Text('Reject / Cancel'),
                                     ),
-                                  ),
+                                  if (_isAcceptedStatus(order.status))
+                                    ElevatedButton.icon(
+                                      onPressed: () {
+                                        final route = order.orderId.isNotEmpty
+                                            ? '/delivery-partner/live-navigation?orderId=${Uri.encodeComponent(order.orderId)}'
+                                            : '/delivery-partner/live-navigation';
+                                        context.push(route);
+                                      },
+                                      icon: const Icon(Icons.navigation_outlined,
+                                          size: 16),
+                                      label: const Text('Navigate'),
+                                      style: _primaryActionStyle(
+                                          color: const Color(0xFF0F9D58)),
+                                    ),
                                 ],
-                                child: const Icon(Icons.more_vert),
                               ),
                             ),
                           ],
@@ -1683,29 +2025,11 @@ class DeliveryPanelScaffold extends StatelessWidget {
           elevation: 0,
           centerTitle: false,
         ),
-        drawer: Drawer(
-          child: SafeArea(
-            child: DeliveryPanelSidebar(
-              currentRoute: currentRoute,
-              compact: true,
-            ),
-          ),
-        ),
         body: content,
-        bottomNavigationBar: bottomButton != null
-            ? Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(
-                      color: theme.dividerColor,
-                      width: 1,
-                    ),
-                  ),
-                ),
-                child: bottomButton,
-              )
-            : null,
+        bottomNavigationBar: _DeliveryBottomBar(
+          currentRoute: currentRoute,
+          actionButton: bottomButton,
+        ),
       );
     }
 
@@ -1730,20 +2054,60 @@ class DeliveryPanelScaffold extends StatelessWidget {
           ),
         ],
       ),
-      bottomNavigationBar: bottomButton != null
-          ? Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(
-                    color: theme.dividerColor,
-                    width: 1,
+      bottomNavigationBar: _DeliveryBottomBar(
+        currentRoute: currentRoute,
+        actionButton: bottomButton,
+      ),
+    );
+  }
+}
+
+class _DeliveryBottomBar extends StatelessWidget {
+  final String currentRoute;
+  final Widget? actionButton;
+
+  const _DeliveryBottomBar({
+    required this.currentRoute,
+    this.actionButton,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (actionButton != null) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+              child: actionButton!,
+            ),
+          ],
+          CurvedPanelBottomNav(
+            items: _deliveryNavItems
+                .map(
+                  (item) => CurvedNavItemData(
+                    icon: item.icon,
+                    selectedIcon: item.icon == Icons.home_outlined
+                        ? Icons.home
+                      : item.icon == Icons.attach_money_outlined
+                        ? Icons.attach_money
+                        : item.icon == Icons.receipt_long_outlined
+                          ? Icons.receipt_long
+                          : item.icon == Icons.gps_fixed_outlined
+                            ? Icons.gps_fixed
+                            : Icons.settings,
+                    label: item.label,
+                    isSelected: currentRoute == item.route ||
+                        currentRoute.startsWith('${item.route}/'),
+                    onTap: () => context.go(item.route),
                   ),
-                ),
-              ),
-              child: bottomButton,
-            )
-          : null,
+                )
+                .toList(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1994,7 +2358,7 @@ class DeliveryPanelSidebar extends ConsumerWidget {
     required String currentRoute,
     required bool collapsed,
   }) {
-    final isActive = currentRoute == route;
+    final isActive = currentRoute == route || currentRoute.startsWith('$route/');
 
     final navItem = Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2152,392 +2516,145 @@ class IncomingOrderScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final state = ref.watch(deliveryPanelProvider);
-    final request =
-        state.incomingRequests.isNotEmpty ? state.incomingRequests.first : null;
+    final orderedRequests = [...state.incomingRequests]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    if (request == null) {
-      return Scaffold(
-        appBar: AppBar(
-          title: const Text('Incoming Request'),
-          leading: BackButton(onPressed: () => context.pop()),
-        ),
-        body: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Icon(Icons.inbox_outlined, size: 56, color: Colors.grey),
-                const SizedBox(height: 12),
-                Text(
-                  'No delivery requests right now.',
-                  style: theme.textTheme.titleMedium
-                      ?.copyWith(fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'When an order is assigned to you, it will appear here.',
-                  style:
-                      theme.textTheme.bodyMedium?.copyWith(color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ),
-      );
-    }
-
-    final etaText = request.estimatedDeliveryTime == null
-        ? '—'
-        : request.estimatedDeliveryTime!.toLocal().toString().split('.').first;
-
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: BackButton(onPressed: () => context.pop()),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: CircleAvatar(
-              radius: 24,
-              backgroundColor: Colors.blue,
-              child: Text(
-                'DP',
-                style: theme.textTheme.labelLarge?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: NetworkImage(
-              'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
-            ),
-            fit: BoxFit.cover,
-          ),
-        ),
-        child: Stack(
-          children: [
-            Container(color: Colors.black.withOpacity(0.32)),
-            SafeArea(
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const SizedBox(height: 20),
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(
-                                        Icons.notifications_active,
-                                        color: Colors.blue),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'INCOMING DELIVERY REQUEST',
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: Colors.grey,
-                                            letterSpacing: 1,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          request.restaurantName,
-                                          style: theme.textTheme.headlineSmall
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 6),
-                                        Text(
-                                          'Customer: ${request.customerName}',
-                                          style: theme.textTheme.bodyMedium
-                                              ?.copyWith(
-                                            color: Colors.grey[700],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(
-                                        'PAY',
-                                        style: theme.textTheme.labelSmall
-                                            ?.copyWith(
-                                          color: Colors.grey,
-                                          letterSpacing: 1,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        '\$${request.deliveryFee.toStringAsFixed(2)}',
-                                        style: theme.textTheme.headlineSmall
-                                            ?.copyWith(
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.blue,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 24),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      context,
-                                      Icons.straighten,
-                                      '\$${request.totalAmount.toStringAsFixed(2)}',
-                                      'ORDER TOTAL',
-                                      theme,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: _buildInfoCard(
-                                      context,
-                                      Icons.schedule,
-                                      etaText,
-                                      'EST. READY',
-                                      theme,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.blue.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(Icons.storefront,
-                                        color: Colors.blue),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'PICKUP LOCATION',
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: Colors.grey,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          request.restaurantName,
-                                          style: theme.textTheme.bodyLarge
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Text(
-                                          request.customerAddress,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(12),
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: const Icon(Icons.location_on,
-                                        color: Colors.green),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'CUSTOMER',
-                                          style: theme.textTheme.labelSmall
-                                              ?.copyWith(
-                                            color: Colors.grey,
-                                            letterSpacing: 0.5,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          request.customerName,
-                                          style: theme.textTheme.bodyLarge
-                                              ?.copyWith(
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Text(
-                                          request.customerPhone,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            color: Colors.grey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              if (request.customerEmail.isNotEmpty &&
-                                  request.customerEmail != '-')
-                                Text(
-                                  'Customer email: ${request.customerEmail}',
-                                  style: theme.textTheme.bodySmall
-                                      ?.copyWith(color: Colors.grey),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: ElevatedButton.icon(
-                          onPressed: state.isLoading
-                              ? null
-                              : () async {
-                                  await ref
-                                      .read(deliveryPanelProvider.notifier)
-                                      .acceptIncomingRequest(request.id);
-                                  if (!context.mounted) return;
-                                  if (ref.read(deliveryPanelProvider).error ==
-                                      null) {
-                                    _showActionSnackBar(
-                                        context, 'Delivery accepted.');
-                                    context.push(
-                                        '/delivery-partner/order-accepted');
-                                  }
-                                },
-                          icon: const Icon(Icons.check_circle_outline),
-                          label: const Text('Accept Delivery'),
-                          style: _primaryActionStyle(color: Colors.blue),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 56,
-                        child: OutlinedButton.icon(
-                          onPressed: state.isLoading
-                              ? null
-                              : () async {
-                                  await ref
-                                      .read(deliveryPanelProvider.notifier)
-                                      .rejectIncomingRequest(request.id);
-                                  if (!context.mounted) return;
-                                  _showActionSnackBar(
-                                      context, 'Delivery declined.',
-                                      isError: true);
-                                  context.pop();
-                                },
-                          style: _secondaryActionStyle(context),
-                          icon: const Icon(Icons.close, color: Colors.grey),
-                          label: const Text(
-                            'DECLINE ORDER',
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  static Widget _buildInfoCard(BuildContext context, IconData icon,
-      String value, String label, ThemeData theme) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blue.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.withOpacity(0.1)),
-      ),
+    return DeliveryPanelScaffold(
+      currentRoute: '/delivery-partner/incoming-order',
+      title: 'Incoming Requests',
+      subtitle: 'All assigned requests in order placed',
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.blue, size: 28),
-          const SizedBox(height: 8),
-          Text(value,
-              style: theme.textTheme.titleMedium
-                  ?.copyWith(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 4),
-          Text(label,
-              style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey)),
+          _PanelCard(
+            title: 'Requests Queue',
+            child: orderedRequests.isEmpty
+                ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Center(
+                      child: Text(
+                        'No delivery requests right now.',
+                        style: theme.textTheme.bodyLarge
+                            ?.copyWith(color: Colors.grey[600]),
+                      ),
+                    ),
+                  )
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: orderedRequests.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final request = orderedRequests[index];
+                      final etaText = request.estimatedDeliveryTime == null
+                          ? 'Not set'
+                          : request.estimatedDeliveryTime!
+                              .toLocal()
+                              .toString()
+                              .split('.')
+                              .first;
+
+                      return Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withOpacity(0.25),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    request.restaurantName,
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(
+                                            fontWeight: FontWeight.w700),
+                                  ),
+                                ),
+                                Text(
+                                  '\$${request.deliveryFee.toStringAsFixed(2)}',
+                                  style: theme.textTheme.titleMedium?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    color: const Color(0xFF0F9D58),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Text('Customer: ${request.customerName}'),
+                            const SizedBox(height: 4),
+                            Text('Address: ${request.customerAddress}'),
+                            const SizedBox(height: 4),
+                            Text('Phone: ${request.customerPhone}'),
+                            const SizedBox(height: 4),
+                            Text('Placed at: ${request.createdAt.toLocal().toString().split('.').first}'),
+                            const SizedBox(height: 4),
+                            Text('ETA: $etaText'),
+                            const SizedBox(height: 14),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ElevatedButton(
+                                    onPressed: state.isLoading
+                                        ? null
+                                        : () async {
+                                            await ref
+                                                .read(deliveryPanelProvider
+                                                    .notifier)
+                                                .acceptIncomingRequest(
+                                                    request.id);
+                                            if (!context.mounted) return;
+                                            if (ref
+                                                    .read(deliveryPanelProvider)
+                                                    .error ==
+                                                null) {
+                                              _showActionSnackBar(context,
+                                                  'Delivery accepted.');
+                                              context.push(
+                                                  '/delivery-partner/order-accepted');
+                                            }
+                                          },
+                                    style: _primaryActionStyle(
+                                        color: const Color(0xFF0F9D58)),
+                                    child: const Text('Accept'),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: OutlinedButton(
+                                    onPressed: state.isLoading
+                                        ? null
+                                        : () async {
+                                            await ref
+                                                .read(deliveryPanelProvider
+                                                    .notifier)
+                                                .rejectIncomingRequest(
+                                                    request.id);
+                                            if (!context.mounted) return;
+                                            _showActionSnackBar(
+                                              context,
+                                              'Delivery declined.',
+                                              isError: true,
+                                            );
+                                          },
+                                    style: _secondaryActionStyle(context),
+                                    child: const Text('Decline'),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
     );
@@ -2604,8 +2721,8 @@ class _DashboardHero extends StatelessWidget {
             height: 52,
             child: ElevatedButton.icon(
               onPressed: onTakeDelivery,
-              icon: const Icon(Icons.local_shipping_outlined),
-              label: const Text('Review requests'),
+              icon: const Icon(Icons.list_alt_outlined),
+              label: const Text('View all orders'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF0F9D58),
                 foregroundColor: Colors.white,
@@ -2996,147 +3113,776 @@ class OrderAcceptedScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: NetworkImage(
-              'https://images.unsplash.com/photo-1524661135-423995f22d0b?auto=format&fit=crop&w=1200&q=80',
+    return DeliveryPanelScaffold(
+      currentRoute: '/delivery-partner/order-accepted',
+      title: 'Order Accepted',
+      subtitle: 'Ready for next delivery step',
+      child: Column(
+        children: [
+          _PanelCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Order accepted successfully.',
+                  style: theme.textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'You can now start navigation or return to incoming requests.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: ElevatedButton(
+                        onPressed: () {
+                          context.push('/delivery-partner/live-navigation');
+                        },
+                        style: _primaryActionStyle(color: const Color(0xFF0F9D58)),
+                        child: const Text('Start Navigation'),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          context.go('/delivery-partner/incoming-order');
+                        },
+                        style: _secondaryActionStyle(context),
+                        child: const Text('Back to Requests'),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            fit: BoxFit.cover,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+enum DeliveryTripState {
+  searching,
+  onTheWay,
+  arrived,
+  delivered,
+}
+
+class DeliveryLiveNavigationScreen extends ConsumerStatefulWidget {
+  final String? orderId;
+
+  const DeliveryLiveNavigationScreen({Key? key, this.orderId})
+      : super(key: key);
+
+  @override
+  ConsumerState<DeliveryLiveNavigationScreen> createState() =>
+      _DeliveryLiveNavigationScreenState();
+}
+
+class _DeliveryLiveNavigationScreenState
+    extends ConsumerState<DeliveryLiveNavigationScreen> {
+  static const LatLng _defaultPickupLocation = LatLng(23.7806, 90.4072);
+  static const LatLng _defaultDropLocation = LatLng(23.7742, 90.3999);
+
+  final ApiClient _apiClient = ApiClient();
+
+  bool get _supportsNativeMap {
+    if (kIsWeb) return false;
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  GoogleMapController? _mapController;
+  StreamSubscription<Map<String, dynamic>>? _streamSubscription;
+  Timer? _fallbackRefreshTimer;
+
+  DeliveryTripState _tripState = DeliveryTripState.searching;
+  bool _isAutoFollowEnabled = true;
+  bool _isLoading = true;
+  bool _isStreamConnected = false;
+  String? _error;
+
+  String? _resolvedOrderId;
+  ActiveDelivery? _selectedDelivery;
+  Map<String, dynamic>? _tracking;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_bootstrap());
+  }
+
+  double? _asNullableDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  DeliveryTripState _mapTripState(dynamic rawState) {
+    final state = rawState?.toString().toLowerCase() ?? '';
+    switch (state) {
+      case 'delivered':
+        return DeliveryTripState.delivered;
+      case 'on_the_way':
+        return DeliveryTripState.onTheWay;
+      case 'arrived_pickup':
+      case 'arrived':
+        return DeliveryTripState.arrived;
+      case 'searching':
+      default:
+        return DeliveryTripState.searching;
+    }
+  }
+
+  Future<ActiveDelivery?> _resolveDelivery(String token) async {
+    final state = ref.read(deliveryPanelProvider);
+    final preferredOrderId = widget.orderId;
+
+    ActiveDelivery? byId;
+    if (preferredOrderId != null && preferredOrderId.isNotEmpty) {
+      for (final delivery in state.activeDeliveries) {
+        if (delivery.orderId == preferredOrderId || delivery.id == preferredOrderId) {
+          byId = delivery;
+          break;
+        }
+      }
+    }
+
+    if (byId != null) return byId;
+    if (state.activeDeliveries.isNotEmpty) return state.activeDeliveries.first;
+
+    await ref.read(deliveryPanelProvider.notifier).loadFromBackend(token: token);
+    final refreshed = ref.read(deliveryPanelProvider).activeDeliveries;
+    if (refreshed.isEmpty) return null;
+
+    if (preferredOrderId != null && preferredOrderId.isNotEmpty) {
+      for (final delivery in refreshed) {
+        if (delivery.orderId == preferredOrderId || delivery.id == preferredOrderId) {
+          return delivery;
+        }
+      }
+    }
+
+    return refreshed.first;
+  }
+
+  Future<void> _bootstrap() async {
+    final token = ref.read(authProvider).token;
+    if (token == null || token.isEmpty) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = 'Please login as delivery partner to use live tracking.';
+      });
+      return;
+    }
+
+    try {
+      final selected = await _resolveDelivery(token);
+      if (selected == null) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _error = 'No active accepted delivery found.';
+        });
+        return;
+      }
+
+      final orderId = (widget.orderId?.isNotEmpty == true)
+          ? widget.orderId!
+          : (selected.orderId?.isNotEmpty == true ? selected.orderId! : '');
+
+      if (orderId.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _isLoading = false;
+          _error = 'Live tracking requires a valid order id.';
+          _selectedDelivery = selected;
+        });
+        return;
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _selectedDelivery = selected;
+        _resolvedOrderId = orderId;
+      });
+
+      await _fetchCurrentTracking(showLoader: true);
+      _connectStream();
+      _fallbackRefreshTimer?.cancel();
+      _fallbackRefreshTimer =
+          Timer.periodic(const Duration(seconds: 8), (_) {
+        if (!_isStreamConnected) {
+          unawaited(_fetchCurrentTracking());
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    }
+  }
+
+  Future<void> _fetchCurrentTracking({bool showLoader = false}) async {
+    final token = ref.read(authProvider).token;
+    final orderId = _resolvedOrderId;
+    if (token == null || token.isEmpty || orderId == null || orderId.isEmpty) {
+      return;
+    }
+
+    if (showLoader && mounted) {
+      setState(() {
+        _isLoading = true;
+        _error = null;
+      });
+    }
+
+    try {
+      final tracking = await _apiClient.getCurrentDeliveryTracking(
+        token: token,
+        orderId: orderId,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _tracking = tracking;
+        _tripState = _mapTripState(tracking['state']);
+        _isLoading = false;
+        _error = null;
+      });
+      _followRiderCamera();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _error = e.toString().replaceAll('Exception: ', '');
+      });
+    }
+  }
+
+  void _connectStream() {
+    final token = ref.read(authProvider).token;
+    final orderId = _resolvedOrderId;
+    if (token == null || token.isEmpty || orderId == null || orderId.isEmpty) {
+      return;
+    }
+
+    _streamSubscription?.cancel();
+    _streamSubscription = _apiClient
+        .streamDeliveryTrackingEvents(token: token, orderId: orderId)
+        .listen(
+      (payload) {
+        if (!mounted) return;
+        setState(() {
+          _tracking = payload;
+          _tripState = _mapTripState(payload['state']);
+          _isStreamConnected = true;
+          _error = null;
+          _isLoading = false;
+        });
+        _followRiderCamera();
+      },
+      onError: (_) {
+        if (!mounted) return;
+        setState(() {
+          _isStreamConnected = false;
+        });
+      },
+      cancelOnError: false,
+    );
+  }
+
+  LatLng _pickupPosition() {
+    final pickup = _tracking?['pickup'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(_tracking!['pickup'] as Map)
+        : <String, dynamic>{};
+
+    final lat = _asNullableDouble(pickup['latitude']) ??
+        _selectedDelivery?.pickupLatitude ??
+        _defaultPickupLocation.latitude;
+    final lng = _asNullableDouble(pickup['longitude']) ??
+        _selectedDelivery?.pickupLongitude ??
+        _defaultPickupLocation.longitude;
+    return LatLng(lat, lng);
+  }
+
+  LatLng _dropPosition() {
+    final dropoff = _tracking?['dropoff'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(_tracking!['dropoff'] as Map)
+        : <String, dynamic>{};
+
+    final lat = _asNullableDouble(dropoff['latitude']) ??
+        _selectedDelivery?.dropLatitude ??
+        _defaultDropLocation.latitude;
+    final lng = _asNullableDouble(dropoff['longitude']) ??
+        _selectedDelivery?.dropLongitude ??
+        _defaultDropLocation.longitude;
+    return LatLng(lat, lng);
+  }
+
+  LatLng _riderPosition() {
+    final rider = _tracking?['rider'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(_tracking!['rider'] as Map)
+        : <String, dynamic>{};
+
+    final fallback = _pickupPosition();
+    final lat = _asNullableDouble(rider['latitude']) ?? fallback.latitude;
+    final lng = _asNullableDouble(rider['longitude']) ?? fallback.longitude;
+    return LatLng(lat, lng);
+  }
+
+  void _followRiderCamera() {
+    if (!_isAutoFollowEnabled || _mapController == null) return;
+    final rider = _riderPosition();
+    _mapController!.animateCamera(
+      CameraUpdate.newCameraPosition(
+        CameraPosition(target: rider, zoom: 16),
+      ),
+    );
+  }
+
+  String _etaText() {
+    final eta = (_tracking?['etaMinutes']);
+    final etaInt = eta is num ? eta.toInt() : int.tryParse('${eta ?? ''}');
+
+    if (_tripState == DeliveryTripState.delivered) return 'Delivered';
+    if (_tripState == DeliveryTripState.arrived) return 'Arrived at destination';
+    if (etaInt != null && etaInt > 0) return '$etaInt min ETA';
+    if (_tripState == DeliveryTripState.onTheWay) return 'Calculating ETA...';
+    return 'Searching for rider location...';
+  }
+
+  String _stateLabel(DeliveryTripState state) {
+    switch (state) {
+      case DeliveryTripState.searching:
+        return 'Searching';
+      case DeliveryTripState.onTheWay:
+        return 'On The Way';
+      case DeliveryTripState.arrived:
+        return 'Arrived';
+      case DeliveryTripState.delivered:
+        return 'Delivered';
+    }
+  }
+
+  double _tripProgress() {
+    switch (_tripState) {
+      case DeliveryTripState.searching:
+        return 0.2;
+      case DeliveryTripState.onTheWay:
+        return 0.65;
+      case DeliveryTripState.arrived:
+        return 0.9;
+      case DeliveryTripState.delivered:
+        return 1.0;
+    }
+  }
+
+  Future<void> _openGoogleNavigation() async {
+    final drop = _dropPosition();
+    final navUri =
+        Uri.parse('google.navigation:q=${drop.latitude},${drop.longitude}&mode=d');
+    final fallbackUri = Uri.parse(
+        'https://www.google.com/maps/dir/?api=1&destination=${drop.latitude},${drop.longitude}&travelmode=driving');
+
+    if (await canLaunchUrl(navUri)) {
+      await launchUrl(navUri);
+      return;
+    }
+
+    await launchUrl(fallbackUri, mode: LaunchMode.externalApplication);
+  }
+
+  Future<void> _callCustomer() async {
+    final phone = _selectedDelivery?.customerPhone;
+    if (phone == null || phone.trim().isEmpty || phone == '-') {
+      _showActionSnackBar(context, 'Customer phone unavailable', isError: true);
+      return;
+    }
+
+    final uri = Uri.parse('tel:$phone');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+      return;
+    }
+
+    _showActionSnackBar(context, 'Could not open dialer', isError: true);
+  }
+
+  void _markDelivered() {
+    setState(() {
+      _tripState = DeliveryTripState.delivered;
+      _tracking = {
+        ...?_tracking,
+        'state': 'delivered',
+      };
+    });
+    _showActionSnackBar(context, 'Marked delivered (UI state updated).');
+  }
+
+  @override
+  void dispose() {
+    _streamSubscription?.cancel();
+    _fallbackRefreshTimer?.cancel();
+    _mapController?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    if (_isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Live Navigation')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_error != null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Live Navigation')),
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 12),
+                ElevatedButton(
+                  onPressed: () => _fetchCurrentTracking(showLoader: true),
+                  child: const Text('Retry'),
+                ),
+              ],
+            ),
           ),
         ),
-        child: Stack(
-          children: [
-            Container(color: Colors.black.withOpacity(0.4)),
-            SafeArea(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Velocity Delivery',
-                          style: theme.textTheme.titleLarge?.copyWith(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue,
-                          ),
-                        ),
-                        CircleAvatar(
-                          radius: 20,
-                          backgroundColor: Colors.blue,
-                          child: Text(
-                            'DP',
-                            style: theme.textTheme.labelSmall?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+      );
+    }
+
+    final pickup = _pickupPosition();
+    final drop = _dropPosition();
+    final rider = _riderPosition();
+
+    final dropoff = _tracking?['dropoff'] is Map<String, dynamic>
+        ? Map<String, dynamic>.from(_tracking!['dropoff'] as Map)
+        : <String, dynamic>{};
+
+    final customerName = _selectedDelivery?.customerName ?? 'Customer';
+    final customerAddress = dropoff['address']?.toString() ??
+        _selectedDelivery?.customerAddress ??
+        'Address unavailable';
+    final orderItems = (_selectedDelivery?.orderItems ?? const [])
+        .where((item) => item.trim().isNotEmpty)
+        .toList();
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('pickup'),
+        position: pickup,
+        infoWindow: const InfoWindow(title: 'Pickup'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+      ),
+      Marker(
+        markerId: const MarkerId('dropoff'),
+        position: drop,
+        infoWindow: const InfoWindow(title: 'Customer'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+      ),
+      Marker(
+        markerId: const MarkerId('rider'),
+        position: rider,
+        infoWindow: const InfoWindow(title: 'Rider'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+      ),
+    };
+
+    final polylines = <Polyline>{
+      Polyline(
+        polylineId: const PolylineId('route'),
+        points: [pickup, rider, drop],
+        color: const Color(0xFF2563EB),
+        width: 6,
+      ),
+    };
+
+    return Scaffold(
+      body: Stack(
+        children: [
+          _supportsNativeMap
+              ? GoogleMap(
+                  myLocationButtonEnabled: true,
+                  zoomControlsEnabled: false,
+                  compassEnabled: false,
+                  mapToolbarEnabled: false,
+                  initialCameraPosition: CameraPosition(
+                    target: rider,
+                    zoom: 14.5,
                   ),
-                  Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(24),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[300],
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Icon(
-                          Icons.check_circle,
-                          color: Colors.green,
-                          size: 64,
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                      Text(
-                        'Order Accepted!',
-                        style: theme.textTheme.displaySmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        "Great news! You've successfully\nsecured this delivery.",
-                        textAlign: TextAlign.center,
-                        style: theme.textTheme.bodyLarge?.copyWith(
-                          color: Colors.grey[300],
-                        ),
-                      ),
-                    ],
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                  onMapCreated: (controller) {
+                    _mapController = controller;
+                    _followRiderCamera();
+                  },
+                  onCameraMoveStarted: () {
+                    if (_isAutoFollowEnabled) {
+                      setState(() => _isAutoFollowEnabled = false);
+                    }
+                  },
+                  markers: markers,
+                  polylines: polylines,
+                )
+              : Container(
+                  color: theme.colorScheme.surface,
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
                     child: Column(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              _showActionSnackBar(
-                                  context, 'Navigation started');
-                            },
-                            icon: const Icon(Icons.navigation),
-                            label: const Text('Start Navigation'),
-                            style: _primaryActionStyle(color: Colors.blue),
-                          ),
+                        const Icon(Icons.map_outlined, size: 52),
+                        const SizedBox(height: 10),
+                        Text(
+                          'Google Maps is not supported on Windows desktop.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w700),
                         ),
-                        const SizedBox(height: 8),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 56,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              _showActionSnackBar(
-                                  context, 'Viewing pickup details');
-                            },
-                            icon: const Icon(Icons.info_outline),
-                            label: const Text('View Pickup Details'),
-                            style: _secondaryActionStyle(context),
-                          ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Live order stream and ETA are still active. For full map navigation, run on Android or iOS.',
+                          textAlign: TextAlign.center,
+                          style: theme.textTheme.bodyMedium
+                              ?.copyWith(color: Colors.grey[700]),
                         ),
                       ],
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                ),
+          SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Row(
+                children: [
+                  IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withOpacity(0.48),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.arrow_back_ios_new),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
                     child: Container(
-                      padding: const EdgeInsets.all(12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       decoration: BoxDecoration(
-                        color: Colors.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.red.withOpacity(0.3)),
+                        color: (isDark ? Colors.black : Colors.white)
+                            .withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 16,
+                            offset: const Offset(0, 8),
+                          ),
+                        ],
                       ),
                       child: Row(
                         children: [
-                          const Icon(Icons.warning,
-                              color: Colors.red, size: 20),
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: _tripState == DeliveryTripState.delivered
+                                  ? Colors.green
+                                  : const Color(0xFF2563EB),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Safety first: Please ensure you are parked safely.',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: Colors.red,
+                              _etaText(),
+                              style: theme.textTheme.titleSmall?.copyWith(
+                                fontWeight: FontWeight.w700,
                               ),
+                            ),
+                          ),
+                          Text(
+                            _isStreamConnected ? 'Live' : 'Fallback',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                              color: _isStreamConnected
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700,
                             ),
                           ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.black.withOpacity(0.48),
+                      foregroundColor: Colors.white,
+                    ),
+                    onPressed: _supportsNativeMap
+                        ? () {
+                            setState(() => _isAutoFollowEnabled = true);
+                            _followRiderCamera();
+                          }
+                        : null,
+                    icon: Icon(
+                      _isAutoFollowEnabled
+                          ? Icons.my_location
+                          : Icons.location_searching_outlined,
+                    ),
+                  ),
                 ],
               ),
             ),
-          ],
-        ),
+          ),
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (isDark ? const Color(0xFF111827) : Colors.white)
+                    .withOpacity(0.96),
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.14),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          customerName,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        _stateLabel(_tripState),
+                        style: TextStyle(
+                          color: _tripState == DeliveryTripState.delivered
+                              ? Colors.green
+                              : const Color(0xFF2563EB),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    customerAddress,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: Colors.grey[600]),
+                  ),
+                  const SizedBox(height: 10),
+                  LinearProgressIndicator(
+                    value: _tripProgress(),
+                    minHeight: 6,
+                    borderRadius: BorderRadius.circular(999),
+                    backgroundColor: const Color(0xFF3B82F6).withOpacity(0.14),
+                    valueColor:
+                        const AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: (orderItems.isEmpty
+                            ? const ['Items available in order details feed']
+                            : orderItems)
+                        .map(
+                          (item) => Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF3B82F6).withOpacity(0.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              item,
+                              style: theme.textTheme.bodySmall,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _tripState == DeliveryTripState.delivered
+                              ? null
+                              : _openGoogleNavigation,
+                          icon: const Icon(Icons.navigation_outlined),
+                          label: const Text('Start Navigation'),
+                          style:
+                              _primaryActionStyle(color: const Color(0xFF2563EB)),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _callCustomer,
+                          icon: const Icon(Icons.call_outlined),
+                          label: const Text('Call Customer'),
+                          style: _secondaryActionStyle(context),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: _tripState == DeliveryTripState.delivered
+                          ? null
+                          : _markDelivered,
+                      icon: const Icon(Icons.check_circle_outline),
+                      label: const Text('Mark as Delivered'),
+                      style: _primaryActionStyle(color: const Color(0xFF059669)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -864,6 +864,179 @@ class ApiClient {
     return controller.stream;
   }
 
+  Future<Map<String, dynamic>> getCurrentDeliveryTracking({
+    required String token,
+    required String orderId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/delivery-tracking/orders/$orderId/current'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch delivery tracking');
+    }
+
+    final raw = data['tracking'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid delivery tracking response');
+  }
+
+  Future<Map<String, dynamic>> updateDeliveryTrackingLocation({
+    required String token,
+    required String orderId,
+    required double latitude,
+    required double longitude,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/delivery-tracking/orders/$orderId/location'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode({
+            'latitude': latitude,
+            'longitude': longitude,
+          }),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to update delivery tracking');
+    }
+
+    final raw = data['tracking'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid delivery tracking update response');
+  }
+
+  Stream<Map<String, dynamic>> streamDeliveryTrackingEvents({
+    required String token,
+    required String orderId,
+  }) {
+    final controller = StreamController<Map<String, dynamic>>();
+    final client = http.Client();
+    StreamSubscription<String>? subscription;
+
+    Future<void> connect() async {
+      try {
+        final request = http.Request(
+          'GET',
+          Uri.parse('$_baseUrl/delivery-tracking/orders/$orderId/stream'),
+        );
+        request.headers['Accept'] = 'text/event-stream';
+        request.headers['Authorization'] = 'Bearer $token';
+
+        final response = await client.send(request);
+        if (response.statusCode != 200) {
+          final body = await response.stream.bytesToString();
+          try {
+            final data = jsonDecode(body) as Map<String, dynamic>;
+            controller.addError(
+              Exception(data['message'] ?? 'Failed to open delivery stream'),
+            );
+          } catch (_) {
+            controller.addError(
+              Exception('Failed to open delivery stream'),
+            );
+          }
+          await controller.close();
+          client.close();
+          return;
+        }
+
+        String buffer = '';
+
+        subscription = response.stream.transform(utf8.decoder).listen(
+          (chunk) {
+            buffer += chunk;
+
+            while (true) {
+              final splitIndex = buffer.indexOf('\n\n');
+              if (splitIndex < 0) {
+                break;
+              }
+
+              final block = buffer.substring(0, splitIndex);
+              buffer = buffer.substring(splitIndex + 2);
+
+              final lines = block.split('\n');
+              final payloadLines = <String>[];
+
+              for (final line in lines) {
+                if (line.startsWith('data:')) {
+                  payloadLines.add(line.substring(5).trim());
+                }
+              }
+
+              if (payloadLines.isEmpty) {
+                continue;
+              }
+
+              final payload = payloadLines.join('\n');
+              try {
+                final decoded = jsonDecode(payload);
+                if (decoded is Map<String, dynamic>) {
+                  controller.add(decoded);
+                }
+              } catch (_) {
+                // Ignore malformed payloads.
+              }
+            }
+          },
+          onError: (error) {
+            if (!controller.isClosed) {
+              controller.addError(error);
+            }
+          },
+          onDone: () async {
+            if (!controller.isClosed) {
+              await controller.close();
+            }
+            client.close();
+          },
+          cancelOnError: false,
+        );
+      } catch (error) {
+        if (!controller.isClosed) {
+          controller.addError(error);
+          await controller.close();
+        }
+        client.close();
+      }
+    }
+
+    controller.onCancel = () async {
+      await subscription?.cancel();
+      client.close();
+      if (!controller.isClosed) {
+        await controller.close();
+      }
+    };
+
+    connect();
+    return controller.stream;
+  }
+
   Future<List<Map<String, dynamic>>> getAdminUsers({
     required String token,
   }) async {

@@ -63,6 +63,8 @@ dependencies:
   
   # Bottom Navigation
   convex_bottom_bar: ^3.1.0
+  stylish_bottom_bar: ^1.1.1
+  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:

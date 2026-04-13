@@ -429,9 +429,9 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         bottomNavigationBar: CurvedPanelBottomNav(
           items: [
             CurvedNavItemData(
-              icon: Icons.dashboard_outlined,
-              selectedIcon: Icons.dashboard,
-              label: 'Dashboard',
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home,
+              label: 'Home',
               isSelected: true,
               onTap: () => context.go('/admin'),
             ),
@@ -443,11 +443,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               onTap: () => context.go('/admin/users'),
             ),
             CurvedNavItemData(
-              icon: Icons.local_shipping_outlined,
-              selectedIcon: Icons.local_shipping,
-              label: 'Delivery',
+              icon: Icons.receipt_long_outlined,
+              selectedIcon: Icons.receipt_long,
+              label: 'Orders',
               isSelected: false,
               onTap: () => context.go('/admin/deliveries'),
+            ),
+            CurvedNavItemData(
+              icon: Icons.bar_chart_outlined,
+              selectedIcon: Icons.bar_chart,
+              label: 'Analytics',
+              isSelected: false,
+              onTap: () => context.go('/admin/analytics'),
             ),
             CurvedNavItemData(
               icon: Icons.settings_outlined,

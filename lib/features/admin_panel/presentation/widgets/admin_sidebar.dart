@@ -248,7 +248,7 @@ class AdminSidebar extends ConsumerWidget {
   }
 }
 
-class _NavItem extends StatelessWidget {
+class _NavItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final String route;
@@ -266,56 +266,93 @@ class _NavItem extends StatelessWidget {
   });
 
   @override
+  State<_NavItem> createState() => _NavItemState();
+}
+
+class _NavItemState extends State<_NavItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final isActive = currentRoute == route;
+    final isActive = widget.currentRoute == widget.route;
+    final showActive = isActive || _hovered;
+    final activeBase = Colors.orange;
+    final activeBg = isActive
+        ? activeBase
+        : activeBase.withOpacity(0.14);
 
     final item = Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: collapsed ? 10 : 16,
-              vertical: 12,
-            ),
-            decoration: BoxDecoration(
-              color: isActive ? Colors.orange : Colors.transparent,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisAlignment: collapsed
-                  ? MainAxisAlignment.center
-                  : MainAxisAlignment.start,
-              children: [
-                Icon(
-                  icon,
-                  size: 20,
-                  color: isActive ? Colors.white : Colors.grey[600],
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(8),
+            child: AnimatedScale(
+              duration: const Duration(milliseconds: 140),
+              scale: showActive ? 1.01 : 1,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: EdgeInsets.symmetric(
+                  horizontal: widget.collapsed ? 10 : 16,
+                  vertical: 12,
                 ),
-                if (!collapsed) ...[
-                  const SizedBox(width: 12),
-                  Text(
-                    label,
-                    style: TextStyle(
-                      color: isActive ? Colors.white : Colors.grey[800],
-                      fontWeight:
-                          isActive ? FontWeight.w600 : FontWeight.normal,
-                      fontSize: 14,
-                    ),
+                decoration: BoxDecoration(
+                  color: showActive ? activeBg : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: showActive
+                        ? activeBase.withOpacity(isActive ? 0.9 : 0.35)
+                        : Colors.transparent,
                   ),
-                ],
-              ],
+                  boxShadow: showActive
+                      ? [
+                          BoxShadow(
+                            color: activeBase.withOpacity(isActive ? 0.30 : 0.16),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : const [],
+                ),
+                child: Row(
+                  mainAxisAlignment: widget.collapsed
+                      ? MainAxisAlignment.center
+                      : MainAxisAlignment.start,
+                  children: [
+                    Icon(
+                      widget.icon,
+                      size: 20,
+                      color:
+                          showActive ? Colors.white : Colors.grey.shade600,
+                    ),
+                    if (!widget.collapsed) ...[
+                      const SizedBox(width: 12),
+                      Text(
+                        widget.label,
+                        style: TextStyle(
+                          color:
+                              showActive ? Colors.white : Colors.grey.shade800,
+                          fontWeight:
+                              showActive ? FontWeight.w600 : FontWeight.normal,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
         ),
       ),
     );
 
-    if (!collapsed) return item;
+    if (!widget.collapsed) return item;
 
-    return Tooltip(message: label, child: item);
+    return Tooltip(message: widget.label, child: item);
   }
 }

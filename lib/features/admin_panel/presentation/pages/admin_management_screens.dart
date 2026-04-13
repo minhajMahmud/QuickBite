@@ -2041,9 +2041,9 @@ Widget _adminBottomNav(BuildContext context, String currentRoute) {
   return CurvedPanelBottomNav(
     items: [
       CurvedNavItemData(
-        icon: Icons.dashboard_outlined,
-        selectedIcon: Icons.dashboard,
-        label: 'Dashboard',
+        icon: Icons.home_outlined,
+        selectedIcon: Icons.home,
+        label: 'Home',
         isSelected: currentRoute == '/admin',
         onTap: () => context.go('/admin'),
       ),
@@ -2055,20 +2055,24 @@ Widget _adminBottomNav(BuildContext context, String currentRoute) {
         onTap: () => context.go('/admin/users'),
       ),
       CurvedNavItemData(
-        icon: Icons.local_shipping_outlined,
-        selectedIcon: Icons.local_shipping,
-        label: 'Delivery',
+        icon: Icons.receipt_long_outlined,
+        selectedIcon: Icons.receipt_long,
+        label: 'Orders',
         isSelected: currentRoute == '/admin/deliveries',
         onTap: () => context.go('/admin/deliveries'),
+      ),
+      CurvedNavItemData(
+        icon: Icons.bar_chart_outlined,
+        selectedIcon: Icons.bar_chart,
+        label: 'Analytics',
+        isSelected: currentRoute == '/admin/analytics',
+        onTap: () => context.go('/admin/analytics'),
       ),
       CurvedNavItemData(
         icon: Icons.settings_outlined,
         selectedIcon: Icons.settings,
         label: 'Settings',
-        isSelected: currentRoute == '/admin/settings' ||
-            currentRoute == '/admin/coupons' ||
-            currentRoute == '/admin/restaurants' ||
-            currentRoute == '/admin/analytics',
+        isSelected: currentRoute == '/admin/settings',
         onTap: () => context.go('/admin/settings'),
       ),
     ],

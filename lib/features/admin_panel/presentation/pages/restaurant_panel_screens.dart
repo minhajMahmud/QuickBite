@@ -1435,9 +1435,9 @@ class RestaurantPanelScaffold extends StatelessWidget {
         bottomNavigationBar: CurvedPanelBottomNav(
           items: [
             CurvedNavItemData(
-              icon: Icons.grid_view_rounded,
-              selectedIcon: Icons.grid_view_rounded,
-              label: 'Overview',
+              icon: Icons.home_outlined,
+              selectedIcon: Icons.home,
+              label: 'Home',
               isSelected: currentRoute == '/admin/restaurant-panel',
               onTap: () => context.go('/admin/restaurant-panel'),
             ),
@@ -1449,18 +1449,24 @@ class RestaurantPanelScaffold extends StatelessWidget {
               onTap: () => context.go('/admin/restaurant-panel/menu'),
             ),
             CurvedNavItemData(
-              icon: Icons.shopping_bag_outlined,
-              selectedIcon: Icons.shopping_bag,
+              icon: Icons.receipt_long_outlined,
+              selectedIcon: Icons.receipt_long,
               label: 'Orders',
               isSelected: currentRoute == '/admin/restaurant-panel/orders',
               onTap: () => context.go('/admin/restaurant-panel/orders'),
             ),
             CurvedNavItemData(
+              icon: Icons.bar_chart_outlined,
+              selectedIcon: Icons.bar_chart,
+              label: 'Analytics',
+              isSelected: currentRoute == '/admin/restaurant-panel/analytics',
+              onTap: () => context.go('/admin/restaurant-panel/analytics'),
+            ),
+            CurvedNavItemData(
               icon: Icons.person_outline,
               selectedIcon: Icons.person,
               label: 'Profile',
-              isSelected: currentRoute == '/admin/restaurant-panel/profile' ||
-                  currentRoute == '/admin/restaurant-panel/analytics',
+              isSelected: currentRoute == '/admin/restaurant-panel/profile',
               onTap: () => context.go('/admin/restaurant-panel/profile'),
             ),
           ],
@@ -1677,7 +1683,7 @@ class RestaurantPanelSidebar extends ConsumerWidget {
   }
 }
 
-class _SideItem extends StatelessWidget {
+class _SideItem extends StatefulWidget {
   final IconData icon;
   final String label;
   final bool active;
@@ -1693,46 +1699,85 @@ class _SideItem extends StatelessWidget {
   });
 
   @override
+  State<_SideItem> createState() => _SideItemState();
+}
+
+class _SideItemState extends State<_SideItem> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    final baseColor =
-        active ? Colors.white : Theme.of(context).textTheme.bodyMedium?.color;
+    final isHighlighted = widget.active || _hovered;
+    const accent = Color(0xFFFF8A00);
+    final baseColor = isHighlighted
+        ? Colors.white
+        : Theme.of(context).textTheme.bodyMedium?.color;
     final sideItem = Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: EdgeInsets.symmetric(
-            horizontal: collapsed ? 10 : 14,
-            vertical: 12,
-          ),
-          decoration: BoxDecoration(
-            color: active ? const Color(0xFFFF8A00) : Colors.transparent,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment:
-                collapsed ? MainAxisAlignment.center : MainAxisAlignment.start,
-            children: [
-              Icon(icon, size: 20, color: baseColor),
-              if (!collapsed) ...[
-                const SizedBox(width: 12),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: baseColor,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                  ),
+      child: MouseRegion(
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: AnimatedScale(
+            duration: const Duration(milliseconds: 140),
+            scale: isHighlighted ? 1.01 : 1,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: EdgeInsets.symmetric(
+                horizontal: widget.collapsed ? 10 : 14,
+                vertical: 12,
+              ),
+              decoration: BoxDecoration(
+                color: isHighlighted
+                    ? accent
+                        .withOpacity(widget.active ? 1 : 0.16)
+                    : Colors.transparent,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isHighlighted
+                      ? accent.withOpacity(widget.active ? 0.9 : 0.35)
+                      : Colors.transparent,
                 ),
-              ],
-            ],
+                boxShadow: isHighlighted
+                    ? [
+                        BoxShadow(
+                          color:
+                              accent.withOpacity(widget.active ? 0.30 : 0.16),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : const [],
+              ),
+              child: Row(
+                mainAxisAlignment: widget.collapsed
+                    ? MainAxisAlignment.center
+                    : MainAxisAlignment.start,
+                children: [
+                  Icon(widget.icon, size: 20, color: baseColor),
+                  if (!widget.collapsed) ...[
+                    const SizedBox(width: 12),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        color: baseColor,
+                        fontWeight:
+                            isHighlighted ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
 
-    if (!collapsed) return sideItem;
-    return Tooltip(message: label, child: sideItem);
+    if (!widget.collapsed) return sideItem;
+    return Tooltip(message: widget.label, child: sideItem);
   }
 }
 
@@ -2366,6 +2411,13 @@ class _OrderManagementCard extends ConsumerWidget {
 
     AvailableDeliveryPartner? selected = partners.first;
 
+    String normalizeText(String input) {
+      return input
+          .replaceAll(RegExp(r'[\r\n\t]+'), ' ')
+          .replaceAll(RegExp(r'\s{2,}'), ' ')
+          .trim();
+    }
+
     return showDialog<AvailableDeliveryPartner>(
       context: context,
       builder: (dialogContext) {
@@ -2375,29 +2427,82 @@ class _OrderManagementCard extends ConsumerWidget {
               title: const Text('Select Delivery Partner'),
               content: SizedBox(
                 width: 460,
-                child: DropdownButtonFormField<String>(
-                  value: selected?.id,
-                  decoration: const InputDecoration(
-                    labelText: 'Available delivery partners',
-                  ),
-                  items: partners
-                      .map(
-                        (partner) => DropdownMenuItem<String>(
-                          value: partner.id,
-                          child: Text(
-                            '${partner.name} • ${partner.vehicleType} • ⭐ ${partner.rating.toStringAsFixed(1)}',
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 360),
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: partners.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (context, index) {
+                      final partner = partners[index];
+                      final isSelected = selected?.id == partner.id;
+                      final partnerName = normalizeText(partner.name);
+                      final vehicleType = normalizeText(partner.vehicleType);
+
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () => setModalState(() => selected = partner),
+                        child: Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFFFF7A00)
+                                  : Theme.of(context)
+                                      .dividerColor
+                                      .withOpacity(0.35),
+                              width: isSelected ? 1.6 : 1,
+                            ),
+                            color: isSelected
+                                ? const Color(0xFFFF7A00).withOpacity(0.08)
+                                : Colors.transparent,
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                                color: isSelected
+                                    ? const Color(0xFFFF7A00)
+                                    : Colors.grey,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      partnerName,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleSmall
+                                          ?.copyWith(
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '$vehicleType • ⭐ ${partner.rating.toStringAsFixed(1)}',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                      )
-                      .toList(),
-                  onChanged: (value) {
-                    if (value == null) return;
-                    final next = partners.firstWhere(
-                      (partner) => partner.id == value,
-                      orElse: () => partners.first,
-                    );
-                    setModalState(() => selected = next);
-                  },
+                      );
+                    },
+                  ),
                 ),
               ),
               actions: [
