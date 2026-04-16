@@ -21,6 +21,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
   String? _appliedPromoCode;
   String? _promoFeedback;
   bool _isPlacingOrder = false;
+  String _deliveryLocationLabel = 'Home';
+  String _deliveryAddress = 'Barangay 10 - Cabugao, Legaspi, Albay';
+  double? _deliveryLatitude = 13.1391;
+  double? _deliveryLongitude = 123.7438;
 
   @override
   void dispose() {
@@ -52,7 +56,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
           discount = subtotal * 0.20;
           feedback = 'BITE20 applied: 20% off subtotal.';
         } else {
-          feedback = 'BITE20 needs a minimum subtotal of ₱25.';
+          feedback = 'BITE20 needs a minimum subtotal of ৳25.';
         }
         break;
       case 'FREEDEL':
@@ -70,6 +74,103 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     });
   }
 
+  Future<void> _showEditAddressDialog() async {
+    final locationController =
+        TextEditingController(text: _deliveryLocationLabel);
+    final addressController = TextEditingController(text: _deliveryAddress);
+    final latitudeController = TextEditingController(
+      text: _deliveryLatitude?.toStringAsFixed(6) ?? '',
+    );
+    final longitudeController = TextEditingController(
+      text: _deliveryLongitude?.toStringAsFixed(6) ?? '',
+    );
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Edit delivery address'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: locationController,
+                  decoration: const InputDecoration(
+                    labelText: 'Location label',
+                    hintText: 'Home / Office',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: addressController,
+                  maxLines: 2,
+                  decoration: const InputDecoration(
+                    labelText: 'Full address',
+                    hintText: 'Street, area, city',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: latitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Latitude (optional)',
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: longitudeController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                    signed: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Longitude (optional)',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final nextLocation = locationController.text.trim();
+                final nextAddress = addressController.text.trim();
+                final lat = double.tryParse(latitudeController.text.trim());
+                final lng = double.tryParse(longitudeController.text.trim());
+
+                setState(() {
+                  _deliveryLocationLabel =
+                      nextLocation.isEmpty ? 'Location' : nextLocation;
+                  _deliveryAddress =
+                      nextAddress.isEmpty ? _deliveryAddress : nextAddress;
+                  _deliveryLatitude = lat;
+                  _deliveryLongitude = lng;
+                });
+
+                Navigator.of(context).pop();
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+
+    locationController.dispose();
+    addressController.dispose();
+    latitudeController.dispose();
+    longitudeController.dispose();
+  }
+
   Future<void> _showReceiptDialog({
     required BuildContext context,
     required List cartItems,
@@ -78,6 +179,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
     required double discount,
     required double total,
     required String orderId,
+    required String locationLabel,
+    required String address,
+    required double? latitude,
+    required double? longitude,
   }) {
     return showDialog<void>(
       context: context,
@@ -93,19 +198,25 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                   (item) => Padding(
                     padding: const EdgeInsets.only(bottom: 6),
                     child: Text(
-                      '• ${item.quantity} x ${item.food.name} (₱${item.subtotal.toStringAsFixed(2)})',
+                      '• ${item.quantity} x ${item.food.name} (৳${item.subtotal.toStringAsFixed(2)})',
                     ),
                   ),
                 ),
                 const Divider(height: 16),
                 Text('Order ID: $orderId'),
                 const Text('Payment: Pending restaurant acceptance'),
-                Text('Subtotal: ₱${subtotal.toStringAsFixed(2)}'),
-                Text('Delivery: ₱${deliveryFee.toStringAsFixed(2)}'),
-                Text('Discount: -₱${discount.toStringAsFixed(2)}'),
+                Text('Delivery To: $locationLabel'),
+                Text('Address: $address'),
+                if (latitude != null && longitude != null)
+                  Text(
+                    'Coordinates: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
+                  ),
+                Text('Subtotal: ৳${subtotal.toStringAsFixed(2)}'),
+                Text('Delivery: ৳${deliveryFee.toStringAsFixed(2)}'),
+                Text('Discount: -৳${discount.toStringAsFixed(2)}'),
                 const SizedBox(height: 6),
                 Text(
-                  'Total Paid: ₱${total.toStringAsFixed(2)}',
+                  'Total Paid: ৳${total.toStringAsFixed(2)} BDT',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
@@ -145,53 +256,78 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
             _sectionCard(
               context,
               title: 'Address',
-              child: Row(
+              child: Column(
                 children: [
-                  Container(
-                    width: 118,
-                    height: 86,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(12),
-                      color: theme.brightness == Brightness.dark
-                          ? Colors.white.withOpacity(0.05)
-                          : const Color(0xFFF1F3F8),
-                    ),
-                    child: Stack(
-                      children: [
-                        const Center(
-                          child: Icon(Icons.map_outlined,
-                              size: 34, color: AppColors.muted),
+                  Row(
+                    children: [
+                      Container(
+                        width: 118,
+                        height: 86,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(12),
+                          color: theme.brightness == Brightness.dark
+                              ? Colors.white.withOpacity(0.05)
+                              : const Color(0xFFF1F3F8),
                         ),
-                        Positioned(
-                          right: 8,
-                          bottom: 8,
-                          child: Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Colors.red,
-                              shape: BoxShape.circle,
+                        child: Stack(
+                          children: [
+                            const Center(
+                              child: Icon(Icons.map_outlined,
+                                  size: 34, color: AppColors.muted),
                             ),
-                          ),
+                            Positioned(
+                              right: 8,
+                              bottom: 8,
+                              child: Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _deliveryLocationLabel,
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _deliveryAddress,
+                              style: const TextStyle(color: AppColors.muted),
+                            ),
+                            if (_deliveryLatitude != null &&
+                                _deliveryLongitude != null) ...[
+                              const SizedBox(height: 6),
+                              Text(
+                                'Lat: ${_deliveryLatitude!.toStringAsFixed(6)}, Lng: ${_deliveryLongitude!.toStringAsFixed(6)}',
+                                style: const TextStyle(
+                                  color: AppColors.muted,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Location',
-                          style: TextStyle(fontWeight: FontWeight.w700),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          'Barangay 10 - Cabugao,\nLegaspi, Albay',
-                          style: TextStyle(color: AppColors.muted),
-                        ),
-                      ],
+                  const SizedBox(height: 10),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: _showEditAddressDialog,
+                      icon: const Icon(Icons.edit_location_alt_outlined),
+                      label: const Text('Edit Address & Location'),
                     ),
                   ),
                 ],
@@ -227,6 +363,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         ),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'All prices are shown in BDT (৳).',
+                    style: TextStyle(color: AppColors.muted),
                   ),
                 ],
               ),
@@ -276,7 +417,7 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                                     ),
                                     const SizedBox(height: 2),
                                     Text(
-                                      '₱ ${(item.food.price * item.quantity).toStringAsFixed(0)}',
+                                      '৳ ${(item.food.price * item.quantity).toStringAsFixed(0)}',
                                       style: const TextStyle(
                                         color: Color(0xFFFF0B72),
                                         fontSize: 24,
@@ -345,13 +486,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
               child: Column(
                 children: [
                   _summaryRow(
-                      'Shipping cost', '₱${deliveryFee.toStringAsFixed(0)}'),
+                      'Shipping cost', '৳${deliveryFee.toStringAsFixed(0)}'),
                   const SizedBox(height: 8),
-                  _summaryRow('Sub Total', '₱${totalPrice.toStringAsFixed(0)}'),
+                  _summaryRow('Sub Total', '৳${totalPrice.toStringAsFixed(0)}'),
                   const SizedBox(height: 8),
                   _summaryRow(
                     'Total',
-                    '₱${grandTotal.toStringAsFixed(0)}',
+                    '৳${grandTotal.toStringAsFixed(0)}',
                     emphasize: true,
                   ),
                   if (_discountAmount > 0) ...[
@@ -360,12 +501,12 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                       _appliedPromoCode == null
                           ? 'Promo Discount'
                           : 'Promo ($_appliedPromoCode)',
-                      '-₱${_discountAmount.toStringAsFixed(0)}',
+                      '-৳${_discountAmount.toStringAsFixed(0)}',
                     ),
                     const SizedBox(height: 8),
                     _summaryRow(
                       'Payable',
-                      '₱${discountedTotal.toStringAsFixed(0)}',
+                      '৳${discountedTotal.toStringAsFixed(0)} BDT',
                       emphasize: true,
                     ),
                   ],
@@ -449,6 +590,10 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                             discount: _discountAmount,
                             total: discountedTotal,
                             orderId: orderId,
+                            locationLabel: _deliveryLocationLabel,
+                            address: _deliveryAddress,
+                            latitude: _deliveryLatitude,
+                            longitude: _deliveryLongitude,
                           );
 
                           if (!mounted) return;
@@ -485,7 +630,11 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen> {
                         height: 18,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       )
-                    : Text(isGuest ? 'Sign in to Place Order' : 'Place Order'),
+                    : Text(
+                        isGuest
+                            ? 'Sign in to Place Order'
+                            : 'Place Order in BDT',
+                      ),
               ),
             ),
           ],

@@ -1,10 +1,8 @@
 import 'package:fl_chart/fl_chart.dart';
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../presentation/providers/app_providers.dart';
 import '../../../../presentation/widgets/curved_panel_bottom_nav.dart';
@@ -473,7 +471,9 @@ class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
   }
 
   bool _isRejectedStatus(String status) {
-    return status == 'cancelled' || status == 'rejected' || status == 'declined';
+    return status == 'cancelled' ||
+        status == 'rejected' ||
+        status == 'declined';
   }
 
   Future<String?> _askRejectReason(BuildContext context) async {
@@ -560,10 +560,25 @@ class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
     return 'pending';
   }
 
+  String _timeAgo(DateTime dateTime) {
+    final diff = DateTime.now().difference(dateTime);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  String _distanceChipLabel(_UnifiedDeliveryOrder order) {
+    final seed = order.id.codeUnits.fold<int>(0, (a, b) => a + b);
+    final km = 1.2 + ((seed % 65) / 10.0);
+    return '${km.toStringAsFixed(1)} km';
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(deliveryPanelProvider);
     final notifier = ref.read(deliveryPanelProvider.notifier);
+    final authUser = ref.watch(authProvider).user;
 
     final unifiedOrders = <_UnifiedDeliveryOrder>[
       ...state.incomingRequests.map(
@@ -601,22 +616,22 @@ class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
     final pendingCount = unifiedOrders
         .where((order) => order.status == 'pending' || order.status == 'new')
         .length;
-    final acceptedCount = unifiedOrders
-        .where((order) => _isAcceptedStatus(order.status))
-        .length;
+    final acceptedCount =
+        unifiedOrders.where((order) => _isAcceptedStatus(order.status)).length;
     final rejectedCount =
         unifiedOrders.where((order) => _isRejectedStatus(order.status)).length;
 
     final hasAccepted = acceptedCount > 0;
     final firstAcceptedOrderId = unifiedOrders
-      .where((order) => _isAcceptedStatus(order.status))
-      .map((order) => order.orderId)
-      .firstWhere((id) => id.isNotEmpty, orElse: () => '');
+        .where((order) => _isAcceptedStatus(order.status))
+        .map((order) => order.orderId)
+        .firstWhere((id) => id.isNotEmpty, orElse: () => '');
 
     final query = _searchQuery.trim().toLowerCase();
     final filteredOrders = unifiedOrders.where((order) {
       final statusKey = _filterKeyForOrder(order);
-      final passesStatus = _selectedFilter == 'all' || statusKey == _selectedFilter;
+      final passesStatus =
+          _selectedFilter == 'all' || statusKey == _selectedFilter;
 
       if (!passesStatus) return false;
       if (query.isEmpty) return true;
@@ -627,6 +642,196 @@ class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
           order.customerAddress.toLowerCase().contains(query) ||
           order.status.toLowerCase().contains(query);
     }).toList();
+
+    Future<void> openOrderDetails(_UnifiedDeliveryOrder order) async {
+      final statusColor = order.status == 'incoming'
+          ? const Color(0xFF2563EB)
+          : _isAcceptedStatus(order.status)
+              ? const Color(0xFF10B981)
+              : _isRejectedStatus(order.status)
+                  ? const Color(0xFFE11D48)
+                  : const Color(0xFFF59E0B);
+
+      final detailsContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _detailRow('Order ID', order.id),
+          _detailRow('Restaurant', order.restaurantName),
+          _detailRow('Customer', order.customerName),
+          _detailRow('Address', order.customerAddress),
+          _detailRow(
+            'Earning',
+            '\$${order.estimatedEarning.toStringAsFixed(2)}',
+          ),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 6,
+            ),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              order.status.toUpperCase(),
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: statusColor,
+              ),
+            ),
+          ),
+        ],
+      );
+
+      List<Widget> actions(BuildContext dialogContext) => [
+            if ((order.status == 'incoming' ||
+                order.status == 'pending' ||
+                order.status == 'new'))
+              TextButton(
+                onPressed: () async {
+                  if (order.source == 'incoming') {
+                    await notifier.acceptIncomingRequest(order.requestId);
+                  } else {
+                    notifier.confirmDelivery(order.id);
+                  }
+                  if (!context.mounted) return;
+                  Navigator.of(dialogContext).pop();
+                  _showActionSnackBar(context, 'Order accepted');
+                },
+                child: const Text('Accept'),
+              ),
+            if ((order.status == 'incoming' ||
+                order.status == 'pending' ||
+                order.status == 'new'))
+              TextButton(
+                onPressed: () async {
+                  Navigator.of(dialogContext).pop();
+                  final reason = await _askRejectReason(context);
+                  if (reason == null || reason.isEmpty) return;
+
+                  if (order.source == 'incoming') {
+                    await notifier.rejectIncomingRequest(
+                      order.requestId,
+                      reason: reason,
+                    );
+                  } else {
+                    notifier.cancelDelivery(order.id);
+                  }
+
+                  if (!context.mounted) return;
+                  _showActionSnackBar(
+                    context,
+                    'Rejected with reason: $reason',
+                    isError: true,
+                  );
+                },
+                child: const Text('Reject / Cancel'),
+              ),
+            if (_isAcceptedStatus(order.status))
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  final route = order.orderId.isNotEmpty
+                      ? '/delivery-partner/live-navigation?orderId=${Uri.encodeComponent(order.orderId)}'
+                      : '/delivery-partner/live-navigation';
+                  context.push(route);
+                },
+                icon: const Icon(Icons.navigation_outlined, size: 16),
+                label: const Text('Navigate'),
+              ),
+            if (order.orderId.isNotEmpty)
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  if (authUser == null || authUser.id.isEmpty) {
+                    _showActionSnackBar(
+                      context,
+                      'Please login to open chat.',
+                      isError: true,
+                    );
+                    return;
+                  }
+
+                  context.push(
+                    '/delivery-chat/${Uri.encodeComponent(order.orderId)}',
+                    extra: {
+                      'orderId': order.orderId,
+                      'currentUserId': authUser.id,
+                      'currentUserName': authUser.name,
+                      'riderName': order.customerName,
+                      'isCustomer': false,
+                    },
+                  );
+                },
+                icon: const Icon(Icons.chat_bubble_outline, size: 16),
+                label: const Text('Chat Customer'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ];
+
+      final isMobileSheet = MediaQuery.of(context).size.width < 760;
+
+      if (isMobileSheet) {
+        await showModalBottomSheet<void>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          builder: (sheetContext) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Order Details',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      detailsContent,
+                      const SizedBox(height: 14),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: actions(sheetContext),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+        return;
+      }
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Order Details'),
+            content: SizedBox(
+              width: 520,
+              child: detailsContent,
+            ),
+            actions: actions(dialogContext),
+          );
+        },
+      );
+    }
 
     return DeliveryPanelScaffold(
       currentRoute: '/delivery-partner/orders',
@@ -812,136 +1017,203 @@ class _DeliveryOrdersScreenState extends ConsumerState<DeliveryOrdersScreen> {
                       ),
                     ),
                   )
-                : SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: DataTable(
-                      columns: const [
-                        DataColumn(label: Text('Order ID')),
-                        DataColumn(label: Text('Restaurant')),
-                        DataColumn(label: Text('Customer')),
-                        DataColumn(label: Text('Status')),
-                        DataColumn(label: Text('Earning')),
-                        DataColumn(label: Text('Actions')),
-                      ],
-                      rows: filteredOrders.map((order) {
-                        final statusColor = order.status == 'incoming'
-                            ? const Color(0xFF2563EB)
-                            : _isAcceptedStatus(order.status)
-                                ? const Color(0xFF10B981)
-                                : _isRejectedStatus(order.status)
-                                    ? const Color(0xFFE11D48)
-                                    : const Color(0xFFF59E0B);
+                : ListView.separated(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: filteredOrders.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final order = filteredOrders[index];
+                      final statusColor = order.status == 'incoming'
+                          ? const Color(0xFF2563EB)
+                          : _isAcceptedStatus(order.status)
+                              ? const Color(0xFF10B981)
+                              : _isRejectedStatus(order.status)
+                                  ? const Color(0xFFE11D48)
+                                  : const Color(0xFFF59E0B);
 
-                        return DataRow(
-                          cells: [
-                            DataCell(Text(
-                              order.id,
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600),
-                            )),
-                            DataCell(Text(order.restaurantName)),
-                            DataCell(Text(order.customerName)),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: statusColor.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Text(
-                                  order.status.toUpperCase(),
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: statusColor,
+                      return Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: Theme.of(context)
+                                .dividerColor
+                                .withOpacity(0.25),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 20,
+                                  backgroundColor:
+                                      const Color(0xFF0F9D58).withOpacity(0.14),
+                                  child: Text(
+                                    order.customerName.isNotEmpty
+                                        ? order.customerName[0].toUpperCase()
+                                        : 'C',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF0F9D58),
+                                    ),
                                   ),
                                 ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        order.restaurantName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .titleSmall
+                                            ?.copyWith(
+                                                fontWeight: FontWeight.w700),
+                                      ),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        order.customerName,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.copyWith(color: Colors.grey[700]),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                  child: Text(
+                                    order.status.toUpperCase(),
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: statusColor,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                _metaChip(
+                                  icon: Icons.schedule,
+                                  label: _timeAgo(order.createdAt),
+                                  color: const Color(0xFF2563EB),
+                                ),
+                                _metaChip(
+                                  icon: Icons.near_me_outlined,
+                                  label: _distanceChipLabel(order),
+                                  color: const Color(0xFF8B5CF6),
+                                ),
+                                _metaChip(
+                                  icon: Icons.confirmation_number_outlined,
+                                  label: order.id,
+                                  color: const Color(0xFF6B7280),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Earning: \$${order.estimatedEarning.toStringAsFixed(2)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFFFF7A00),
                               ),
                             ),
-                            DataCell(
-                              Text('\$${order.estimatedEarning.toStringAsFixed(2)}'),
-                            ),
-                            DataCell(
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 6,
-                                children: [
-                                  if (order.status == 'incoming' ||
-                                      order.status == 'pending' ||
-                                      order.status == 'new')
-                                    OutlinedButton(
-                                      onPressed: () async {
-                                        if (order.source == 'incoming') {
-                                          await notifier
-                                              .acceptIncomingRequest(order.requestId);
-                                        } else {
-                                          notifier.confirmDelivery(order.id);
-                                        }
-                                        if (!context.mounted) return;
-                                        _showActionSnackBar(
-                                            context, 'Order accepted');
-                                      },
-                                      child: const Text('Accept'),
-                                    ),
-                                  if (order.status == 'incoming' ||
-                                      order.status == 'pending' ||
-                                      order.status == 'new')
-                                    OutlinedButton(
-                                      onPressed: () async {
-                                        final reason =
-                                            await _askRejectReason(context);
-                                        if (reason == null || reason.isEmpty) {
-                                          return;
-                                        }
-
-                                        if (order.source == 'incoming') {
-                                          await notifier.rejectIncomingRequest(
-                                            order.requestId,
-                                            reason: reason,
-                                          );
-                                        } else {
-                                          notifier.cancelDelivery(order.id);
-                                        }
-
-                                        if (!context.mounted) return;
-                                        _showActionSnackBar(
-                                          context,
-                                          'Rejected with reason: $reason',
-                                          isError: true,
-                                        );
-                                      },
-                                      child: const Text('Reject / Cancel'),
-                                    ),
-                                  if (_isAcceptedStatus(order.status))
-                                    ElevatedButton.icon(
-                                      onPressed: () {
-                                        final route = order.orderId.isNotEmpty
-                                            ? '/delivery-partner/live-navigation?orderId=${Uri.encodeComponent(order.orderId)}'
-                                            : '/delivery-partner/live-navigation';
-                                        context.push(route);
-                                      },
-                                      icon: const Icon(Icons.navigation_outlined,
-                                          size: 16),
-                                      label: const Text('Navigate'),
-                                      style: _primaryActionStyle(
-                                          color: const Color(0xFF0F9D58)),
-                                    ),
-                                ],
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: ElevatedButton.icon(
+                                onPressed: () => openOrderDetails(order),
+                                icon: const Icon(Icons.visibility_outlined),
+                                label: const Text('View Details'),
+                                style: _primaryActionStyle(
+                                  color: const Color(0xFF0F9D58),
+                                ),
                               ),
                             ),
                           ],
-                        );
-                      }).toList(),
-                    ),
+                        ),
+                      );
+                    },
                   ),
           ),
         ],
       ),
     );
   }
+}
+
+Widget _detailRow(String label, String value) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 96,
+          child: Text(
+            '$label:',
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: Colors.grey[600],
+            ),
+          ),
+        ),
+        Expanded(child: Text(value)),
+      ],
+    ),
+  );
+}
+
+Widget _metaChip({
+  required IconData icon,
+  required String label,
+  required Color color,
+}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.10),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 14, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 // ============= Components =============
@@ -1971,7 +2243,7 @@ class _OrderStatCard extends StatelessWidget {
 
 // ============= Shared Components =============
 
-class DeliveryPanelScaffold extends StatelessWidget {
+class DeliveryPanelScaffold extends ConsumerWidget {
   final String currentRoute;
   final String title;
   final String subtitle;
@@ -1990,7 +2262,7 @@ class DeliveryPanelScaffold extends StatelessWidget {
   }) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
     final isMobile = MediaQuery.of(context).size.width < 900;
 
@@ -2024,6 +2296,19 @@ class DeliveryPanelScaffold extends StatelessWidget {
           backgroundColor: theme.scaffoldBackgroundColor,
           elevation: 0,
           centerTitle: false,
+          actions: [
+            IconButton(
+              tooltip: 'Logout',
+              onPressed: () {
+                ref.read(authProvider.notifier).logout();
+                context.go('/login');
+              },
+              icon: const Icon(
+                Icons.logout_outlined,
+                color: Colors.redAccent,
+              ),
+            ),
+          ],
         ),
         body: content,
         bottomNavigationBar: _DeliveryBottomBar(
@@ -2091,13 +2376,13 @@ class _DeliveryBottomBar extends StatelessWidget {
                     icon: item.icon,
                     selectedIcon: item.icon == Icons.home_outlined
                         ? Icons.home
-                      : item.icon == Icons.attach_money_outlined
-                        ? Icons.attach_money
-                        : item.icon == Icons.receipt_long_outlined
-                          ? Icons.receipt_long
-                          : item.icon == Icons.gps_fixed_outlined
-                            ? Icons.gps_fixed
-                            : Icons.settings,
+                        : item.icon == Icons.attach_money_outlined
+                            ? Icons.attach_money
+                            : item.icon == Icons.receipt_long_outlined
+                                ? Icons.receipt_long
+                                : item.icon == Icons.gps_fixed_outlined
+                                    ? Icons.gps_fixed
+                                    : Icons.settings,
                     label: item.label,
                     isSelected: currentRoute == item.route ||
                         currentRoute.startsWith('${item.route}/'),
@@ -2358,7 +2643,8 @@ class DeliveryPanelSidebar extends ConsumerWidget {
     required String currentRoute,
     required bool collapsed,
   }) {
-    final isActive = currentRoute == route || currentRoute.startsWith('$route/');
+    final isActive =
+        currentRoute == route || currentRoute.startsWith('$route/');
 
     final navItem = Container(
       margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2573,8 +2859,7 @@ class IncomingOrderScreen extends ConsumerWidget {
                                   child: Text(
                                     request.restaurantName,
                                     style: theme.textTheme.titleMedium
-                                        ?.copyWith(
-                                            fontWeight: FontWeight.w700),
+                                        ?.copyWith(fontWeight: FontWeight.w700),
                                   ),
                                 ),
                                 Text(
@@ -2593,7 +2878,8 @@ class IncomingOrderScreen extends ConsumerWidget {
                             const SizedBox(height: 4),
                             Text('Phone: ${request.customerPhone}'),
                             const SizedBox(height: 4),
-                            Text('Placed at: ${request.createdAt.toLocal().toString().split('.').first}'),
+                            Text(
+                                'Placed at: ${request.createdAt.toLocal().toString().split('.').first}'),
                             const SizedBox(height: 4),
                             Text('ETA: $etaText'),
                             const SizedBox(height: 14),
@@ -3144,7 +3430,8 @@ class OrderAcceptedScreen extends StatelessWidget {
                         onPressed: () {
                           context.push('/delivery-partner/live-navigation');
                         },
-                        style: _primaryActionStyle(color: const Color(0xFF0F9D58)),
+                        style:
+                            _primaryActionStyle(color: const Color(0xFF0F9D58)),
                         child: const Text('Start Navigation'),
                       ),
                     ),
@@ -3176,6 +3463,13 @@ enum DeliveryTripState {
   delivered,
 }
 
+class _GeoPoint {
+  final double latitude;
+  final double longitude;
+
+  const _GeoPoint(this.latitude, this.longitude);
+}
+
 class DeliveryLiveNavigationScreen extends ConsumerStatefulWidget {
   final String? orderId;
 
@@ -3189,23 +3483,14 @@ class DeliveryLiveNavigationScreen extends ConsumerStatefulWidget {
 
 class _DeliveryLiveNavigationScreenState
     extends ConsumerState<DeliveryLiveNavigationScreen> {
-  static const LatLng _defaultPickupLocation = LatLng(23.7806, 90.4072);
-  static const LatLng _defaultDropLocation = LatLng(23.7742, 90.3999);
+  static const _GeoPoint _defaultPickupLocation = _GeoPoint(23.7806, 90.4072);
+  static const _GeoPoint _defaultDropLocation = _GeoPoint(23.7742, 90.3999);
 
   final ApiClient _apiClient = ApiClient();
-
-  bool get _supportsNativeMap {
-    if (kIsWeb) return false;
-    return defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
-  }
-
-  GoogleMapController? _mapController;
   StreamSubscription<Map<String, dynamic>>? _streamSubscription;
   Timer? _fallbackRefreshTimer;
 
   DeliveryTripState _tripState = DeliveryTripState.searching;
-  bool _isAutoFollowEnabled = true;
   bool _isLoading = true;
   bool _isStreamConnected = false;
   String? _error;
@@ -3249,7 +3534,8 @@ class _DeliveryLiveNavigationScreenState
     ActiveDelivery? byId;
     if (preferredOrderId != null && preferredOrderId.isNotEmpty) {
       for (final delivery in state.activeDeliveries) {
-        if (delivery.orderId == preferredOrderId || delivery.id == preferredOrderId) {
+        if (delivery.orderId == preferredOrderId ||
+            delivery.id == preferredOrderId) {
           byId = delivery;
           break;
         }
@@ -3259,13 +3545,16 @@ class _DeliveryLiveNavigationScreenState
     if (byId != null) return byId;
     if (state.activeDeliveries.isNotEmpty) return state.activeDeliveries.first;
 
-    await ref.read(deliveryPanelProvider.notifier).loadFromBackend(token: token);
+    await ref
+        .read(deliveryPanelProvider.notifier)
+        .loadFromBackend(token: token);
     final refreshed = ref.read(deliveryPanelProvider).activeDeliveries;
     if (refreshed.isEmpty) return null;
 
     if (preferredOrderId != null && preferredOrderId.isNotEmpty) {
       for (final delivery in refreshed) {
-        if (delivery.orderId == preferredOrderId || delivery.id == preferredOrderId) {
+        if (delivery.orderId == preferredOrderId ||
+            delivery.id == preferredOrderId) {
           return delivery;
         }
       }
@@ -3319,8 +3608,7 @@ class _DeliveryLiveNavigationScreenState
       await _fetchCurrentTracking(showLoader: true);
       _connectStream();
       _fallbackRefreshTimer?.cancel();
-      _fallbackRefreshTimer =
-          Timer.periodic(const Duration(seconds: 8), (_) {
+      _fallbackRefreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
         if (!_isStreamConnected) {
           unawaited(_fetchCurrentTracking());
         }
@@ -3361,7 +3649,6 @@ class _DeliveryLiveNavigationScreenState
         _isLoading = false;
         _error = null;
       });
-      _followRiderCamera();
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -3391,7 +3678,6 @@ class _DeliveryLiveNavigationScreenState
           _error = null;
           _isLoading = false;
         });
-        _followRiderCamera();
       },
       onError: (_) {
         if (!mounted) return;
@@ -3403,7 +3689,7 @@ class _DeliveryLiveNavigationScreenState
     );
   }
 
-  LatLng _pickupPosition() {
+  _GeoPoint _pickupPosition() {
     final pickup = _tracking?['pickup'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(_tracking!['pickup'] as Map)
         : <String, dynamic>{};
@@ -3414,10 +3700,10 @@ class _DeliveryLiveNavigationScreenState
     final lng = _asNullableDouble(pickup['longitude']) ??
         _selectedDelivery?.pickupLongitude ??
         _defaultPickupLocation.longitude;
-    return LatLng(lat, lng);
+    return _GeoPoint(lat, lng);
   }
 
-  LatLng _dropPosition() {
+  _GeoPoint _dropPosition() {
     final dropoff = _tracking?['dropoff'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(_tracking!['dropoff'] as Map)
         : <String, dynamic>{};
@@ -3428,10 +3714,10 @@ class _DeliveryLiveNavigationScreenState
     final lng = _asNullableDouble(dropoff['longitude']) ??
         _selectedDelivery?.dropLongitude ??
         _defaultDropLocation.longitude;
-    return LatLng(lat, lng);
+    return _GeoPoint(lat, lng);
   }
 
-  LatLng _riderPosition() {
+  _GeoPoint _riderPosition() {
     final rider = _tracking?['rider'] is Map<String, dynamic>
         ? Map<String, dynamic>.from(_tracking!['rider'] as Map)
         : <String, dynamic>{};
@@ -3439,17 +3725,7 @@ class _DeliveryLiveNavigationScreenState
     final fallback = _pickupPosition();
     final lat = _asNullableDouble(rider['latitude']) ?? fallback.latitude;
     final lng = _asNullableDouble(rider['longitude']) ?? fallback.longitude;
-    return LatLng(lat, lng);
-  }
-
-  void _followRiderCamera() {
-    if (!_isAutoFollowEnabled || _mapController == null) return;
-    final rider = _riderPosition();
-    _mapController!.animateCamera(
-      CameraUpdate.newCameraPosition(
-        CameraPosition(target: rider, zoom: 16),
-      ),
-    );
+    return _GeoPoint(lat, lng);
   }
 
   String _etaText() {
@@ -3457,7 +3733,8 @@ class _DeliveryLiveNavigationScreenState
     final etaInt = eta is num ? eta.toInt() : int.tryParse('${eta ?? ''}');
 
     if (_tripState == DeliveryTripState.delivered) return 'Delivered';
-    if (_tripState == DeliveryTripState.arrived) return 'Arrived at destination';
+    if (_tripState == DeliveryTripState.arrived)
+      return 'Arrived at destination';
     if (etaInt != null && etaInt > 0) return '$etaInt min ETA';
     if (_tripState == DeliveryTripState.onTheWay) return 'Calculating ETA...';
     return 'Searching for rider location...';
@@ -3491,8 +3768,8 @@ class _DeliveryLiveNavigationScreenState
 
   Future<void> _openGoogleNavigation() async {
     final drop = _dropPosition();
-    final navUri =
-        Uri.parse('google.navigation:q=${drop.latitude},${drop.longitude}&mode=d');
+    final navUri = Uri.parse(
+        'google.navigation:q=${drop.latitude},${drop.longitude}&mode=d');
     final fallbackUri = Uri.parse(
         'https://www.google.com/maps/dir/?api=1&destination=${drop.latitude},${drop.longitude}&travelmode=driving');
 
@@ -3535,7 +3812,6 @@ class _DeliveryLiveNavigationScreenState
   void dispose() {
     _streamSubscription?.cancel();
     _fallbackRefreshTimer?.cancel();
-    _mapController?.dispose();
     super.dispose();
   }
 
@@ -3589,88 +3865,80 @@ class _DeliveryLiveNavigationScreenState
         .where((item) => item.trim().isNotEmpty)
         .toList();
 
-    final markers = <Marker>{
-      Marker(
-        markerId: const MarkerId('pickup'),
-        position: pickup,
-        infoWindow: const InfoWindow(title: 'Pickup'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-      ),
-      Marker(
-        markerId: const MarkerId('dropoff'),
-        position: drop,
-        infoWindow: const InfoWindow(title: 'Customer'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-      ),
-      Marker(
-        markerId: const MarkerId('rider'),
-        position: rider,
-        infoWindow: const InfoWindow(title: 'Rider'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-      ),
-    };
-
-    final polylines = <Polyline>{
-      Polyline(
-        polylineId: const PolylineId('route'),
-        points: [pickup, rider, drop],
-        color: const Color(0xFF2563EB),
-        width: 6,
-      ),
-    };
-
     return Scaffold(
       body: Stack(
         children: [
-          _supportsNativeMap
-              ? GoogleMap(
-                  myLocationButtonEnabled: true,
-                  zoomControlsEnabled: false,
-                  compassEnabled: false,
-                  mapToolbarEnabled: false,
-                  initialCameraPosition: CameraPosition(
-                    target: rider,
-                    zoom: 14.5,
+          Container(
+            color: theme.colorScheme.surface,
+            alignment: Alignment.center,
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: 520),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: (isDark ? const Color(0xFF111827) : Colors.white)
+                      .withOpacity(0.95),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: theme.dividerColor.withOpacity(0.2),
                   ),
-                  onMapCreated: (controller) {
-                    _mapController = controller;
-                    _followRiderCamera();
-                  },
-                  onCameraMoveStarted: () {
-                    if (_isAutoFollowEnabled) {
-                      setState(() => _isAutoFollowEnabled = false);
-                    }
-                  },
-                  markers: markers,
-                  polylines: polylines,
-                )
-              : Container(
-                  color: theme.colorScheme.surface,
-                  alignment: Alignment.center,
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
                       children: [
-                        const Icon(Icons.map_outlined, size: 52),
-                        const SizedBox(height: 10),
-                        Text(
-                          'Google Maps is not supported on Windows desktop.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.w700),
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF2563EB).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Icon(
+                            Icons.map_outlined,
+                            color: Color(0xFF2563EB),
+                          ),
                         ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Live order stream and ETA are still active. For full map navigation, run on Android or iOS.',
-                          textAlign: TextAlign.center,
-                          style: theme.textTheme.bodyMedium
-                              ?.copyWith(color: Colors.grey[700]),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Navigation (No API key required)',
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
                       ],
                     ),
-                  ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Pickup: ${pickup.latitude.toStringAsFixed(5)}, ${pickup.longitude.toStringAsFixed(5)}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Rider: ${rider.latitude.toStringAsFixed(5)}, ${rider.longitude.toStringAsFixed(5)}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Drop-off: ${drop.latitude.toStringAsFixed(5)}, ${drop.longitude.toStringAsFixed(5)}',
+                      style: theme.textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Tap “Start Navigation” below to open Google Maps externally.',
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: Colors.grey[700]),
+                    ),
+                  ],
                 ),
+              ),
+            ),
+          ),
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -3743,17 +4011,8 @@ class _DeliveryLiveNavigationScreenState
                       backgroundColor: Colors.black.withOpacity(0.48),
                       foregroundColor: Colors.white,
                     ),
-                    onPressed: _supportsNativeMap
-                        ? () {
-                            setState(() => _isAutoFollowEnabled = true);
-                            _followRiderCamera();
-                          }
-                        : null,
-                    icon: Icon(
-                      _isAutoFollowEnabled
-                          ? Icons.my_location
-                          : Icons.location_searching_outlined,
-                    ),
+                    onPressed: () => _fetchCurrentTracking(showLoader: true),
+                    icon: const Icon(Icons.refresh),
                   ),
                 ],
               ),
@@ -3851,8 +4110,8 @@ class _DeliveryLiveNavigationScreenState
                               : _openGoogleNavigation,
                           icon: const Icon(Icons.navigation_outlined),
                           label: const Text('Start Navigation'),
-                          style:
-                              _primaryActionStyle(color: const Color(0xFF2563EB)),
+                          style: _primaryActionStyle(
+                              color: const Color(0xFF2563EB)),
                         ),
                       ),
                       const SizedBox(width: 8),
@@ -3875,7 +4134,8 @@ class _DeliveryLiveNavigationScreenState
                           : _markDelivered,
                       icon: const Icon(Icons.check_circle_outline),
                       label: const Text('Mark as Delivered'),
-                      style: _primaryActionStyle(color: const Color(0xFF059669)),
+                      style:
+                          _primaryActionStyle(color: const Color(0xFF059669)),
                     ),
                   ),
                 ],

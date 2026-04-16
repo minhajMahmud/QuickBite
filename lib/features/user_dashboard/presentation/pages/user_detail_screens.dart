@@ -64,6 +64,158 @@ class _UserOrderHistoryScreenState
     }).toList();
   }
 
+  Map<String, dynamic> _deliveryPartnerFromOrder(Map<String, dynamic> order) {
+    final raw = order['deliveryPartner'];
+    if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return <String, dynamic>{};
+  }
+
+  Map<String, dynamic> _deliveryRequestFromOrder(Map<String, dynamic> order) {
+    final raw = order['deliveryRequest'];
+    if (raw is Map<String, dynamic>) return Map<String, dynamic>.from(raw);
+    if (raw is Map) {
+      return raw.map((key, value) => MapEntry('$key', value));
+    }
+    return <String, dynamic>{};
+  }
+
+  bool _hasAssignedPartner(Map<String, dynamic> order) {
+    final partner = _deliveryPartnerFromOrder(order);
+    final id = partner['id']?.toString() ?? '';
+    final name = partner['name']?.toString() ?? '';
+    return id.isNotEmpty || name.isNotEmpty;
+  }
+
+  void _openChatForOrder(
+    BuildContext context,
+    Map<String, dynamic> order,
+  ) {
+    final authState = ref.read(authProvider);
+    final currentUser = authState.user;
+
+    if (currentUser == null || currentUser.id.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login to open chat.')),
+      );
+      return;
+    }
+
+    final orderId = (order['id'] ?? '').toString();
+    if (orderId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Order ID is missing.')),
+      );
+      return;
+    }
+
+    final partner = _deliveryPartnerFromOrder(order);
+    final partnerName = (partner['name']?.toString().trim().isNotEmpty ?? false)
+        ? partner['name'].toString()
+        : 'Delivery Partner';
+    final partnerAvatar =
+        (partner['avatar']?.toString().trim().isNotEmpty ?? false)
+            ? partner['avatar'].toString()
+            : null;
+
+    context.push(
+      '/delivery-chat/${Uri.encodeComponent(orderId)}',
+      extra: {
+        'orderId': orderId,
+        'currentUserId': currentUser.id,
+        'currentUserName': currentUser.name,
+        'riderName': partnerName,
+        'riderAvatar': partnerAvatar,
+        'isCustomer': true,
+      },
+    );
+  }
+
+  Future<void> _showOrderDetailsDialog(
+    BuildContext context,
+    Map<String, dynamic> order,
+  ) async {
+    final orderId = (order['id'] ?? '').toString();
+    final status = (order['status'] ?? 'pending').toString();
+    final paymentStatus =
+        (order['paymentStatus'] ?? order['payment_status'] ?? 'pending')
+            .toString();
+    final restaurantName =
+        (order['restaurantName'] ?? order['restaurant_name'] ?? 'Restaurant')
+            .toString();
+    final orderDate = _formatOrderDate(order['createdAt']?.toString());
+    final totalAmount = ((order['totalAmount'] ?? 0) as num).toDouble();
+    final itemNames = _itemsFromOrder(order);
+    final partner = _deliveryPartnerFromOrder(order);
+    final request = _deliveryRequestFromOrder(order);
+    final hasPartner = _hasAssignedPartner(order);
+    final requestStatus = (request['status'] ?? '').toString();
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Order Details'),
+          content: SizedBox(
+            width: 520,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                      'Order: #${orderId.length >= 6 ? orderId.substring(0, 6) : orderId}'),
+                  const SizedBox(height: 6),
+                  Text('Restaurant: $restaurantName'),
+                  Text('Date: $orderDate'),
+                  Text('Total: \$${totalAmount.toStringAsFixed(2)}'),
+                  const SizedBox(height: 8),
+                  Text('Order status: ${status.toUpperCase()}'),
+                  Text('Payment status: ${paymentStatus.toUpperCase()}'),
+                  if (requestStatus.isNotEmpty)
+                    Text('Delivery request: ${requestStatus.toUpperCase()}'),
+                  if (hasPartner) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Assigned delivery partner: ${partner['name']?.toString() ?? 'Delivery Partner'}',
+                    ),
+                    if ((partner['phone']?.toString() ?? '').isNotEmpty)
+                      Text('Phone: ${partner['phone']}'),
+                  ],
+                  if (itemNames.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Items',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 6),
+                    ...itemNames.map((item) => Text('• $item')),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (hasPartner)
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  _openChatForOrder(context, order);
+                },
+                icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                label: const Text('Chat with Delivery Partner'),
+              ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Close'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -320,6 +472,18 @@ class _UserOrderHistoryScreenState
                                     spacing: 8,
                                     runSpacing: 6,
                                     children: [
+                                      OutlinedButton.icon(
+                                        onPressed: () =>
+                                            _showOrderDetailsDialog(
+                                          context,
+                                          order,
+                                        ),
+                                        icon: const Icon(
+                                          Icons.visibility_outlined,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Order Details'),
+                                      ),
                                       OutlinedButton.icon(
                                         onPressed: () => _showRatingDialog(
                                             context, restaurantName),

@@ -10,6 +10,7 @@ const adminRestaurantsRoutes = require('../modules/admin-restaurants/adminRestau
 const adminUsersRoutes = require('../modules/admin-users/adminUsers.routes');
 const catalogRoutes = require('../modules/catalog/catalog.routes');
 const offersRoutes = require('../modules/offers/offers.routes');
+const chatsRoutes = require('../modules/chats/chats.routes');
 const diagnosticRoutes = require('./diagnostic.routes');
 
 const router = express.Router();
@@ -34,6 +35,7 @@ apiRouter.use('/admin/restaurants', adminRestaurantsRoutes);
 apiRouter.use('/admin/users', adminUsersRoutes);
 apiRouter.use('/catalog', catalogRoutes);
 apiRouter.use('/offers', offersRoutes);
+apiRouter.use('/chats', chatsRoutes);
 apiRouter.use('/restaurant-dashboard', restaurantDashboardRoutes);
 apiRouter.use('/diagnostic', diagnosticRoutes);
 

@@ -543,6 +543,51 @@ class _OrderTrackingScreenState extends ConsumerState<OrderTrackingScreen> {
                         style: const TextStyle(color: AppColors.muted),
                       ),
                     ],
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          final authState = ref.read(authProvider);
+                          final currentUser = authState.user;
+
+                          if (currentUser == null || currentUser.id.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please login to open chat.'),
+                              ),
+                            );
+                            return;
+                          }
+
+                          context.push(
+                            '/delivery-chat/${Uri.encodeComponent(orderId)}',
+                            extra: {
+                              'orderId': orderId,
+                              'currentUserId': currentUser.id,
+                              'currentUserName': currentUser.name,
+                              'riderName': (deliveryPartner['name']
+                                          ?.toString()
+                                          .trim()
+                                          .isNotEmpty ??
+                                      false)
+                                  ? deliveryPartner['name'].toString()
+                                  : 'Delivery Partner',
+                              'riderAvatar': deliveryPartner['avatar']
+                                          ?.toString()
+                                          .trim()
+                                          .isNotEmpty ==
+                                      true
+                                  ? deliveryPartner['avatar'].toString()
+                                  : null,
+                              'isCustomer': true,
+                            },
+                          );
+                        },
+                        icon: const Icon(Icons.chat_bubble_outline),
+                        label: const Text('Chat with Rider'),
+                      ),
+                    ),
                   ],
                 ),
               ),

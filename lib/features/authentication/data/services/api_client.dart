@@ -723,6 +723,67 @@ class ApiClient {
     throw Exception('Invalid order response');
   }
 
+  Future<List<Map<String, dynamic>>> getOrderChatMessages({
+    required String token,
+    required String orderId,
+  }) async {
+    final response = await http.get(
+      Uri.parse('$_baseUrl/chats/$orderId/messages'),
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+    ).timeout(
+      const Duration(seconds: 30),
+      onTimeout: () => throw Exception('Request timeout'),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to fetch chat messages');
+    }
+
+    final raw = data['messages'];
+    if (raw is! List) return [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> sendOrderChatMessage({
+    required String token,
+    required String orderId,
+    required Map<String, dynamic> payload,
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$_baseUrl/chats/$orderId/messages'),
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': 'Bearer $token',
+          },
+          body: jsonEncode(payload),
+        )
+        .timeout(
+          const Duration(seconds: 30),
+          onTimeout: () => throw Exception('Request timeout'),
+        );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 201 && response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to send chat message');
+    }
+
+    final raw = data['message'];
+    if (raw is Map<String, dynamic>) {
+      return raw;
+    }
+
+    throw Exception('Invalid chat message response');
+  }
+
   Future<Map<String, dynamic>> updateMyOrderPayment({
     required String token,
     required String orderId,
@@ -864,6 +925,75 @@ class ApiClient {
     return controller.stream;
   }
 
+  String _mapOrderStatusToTrackingState(String status) {
+    switch (status.toLowerCase()) {
+      case 'delivered':
+        return 'delivered';
+      case 'on_the_way':
+        return 'on_the_way';
+      case 'ready':
+      case 'confirmed':
+      case 'preparing':
+        return 'arrived_pickup';
+      default:
+        return 'searching';
+    }
+  }
+
+  Map<String, dynamic>? _buildTrackingFallbackFromDashboard({
+    required String orderId,
+    required Map<String, dynamic> dashboardPayload,
+  }) {
+    final rawData = dashboardPayload['data'];
+    if (rawData is! Map) return null;
+
+    final activeDeliveries = rawData['activeDeliveries'];
+    if (activeDeliveries is! List) return null;
+
+    for (final entry in activeDeliveries.whereType<Map>()) {
+      final request = Map<String, dynamic>.from(entry);
+      final requestOrderId = request['orderId']?.toString();
+      final rawOrder = request['order'];
+      if (rawOrder is! Map) continue;
+
+      final order = Map<String, dynamic>.from(rawOrder);
+      final nestedOrderId = order['id']?.toString();
+
+      final isMatch = requestOrderId == orderId || nestedOrderId == orderId;
+      if (!isMatch) continue;
+
+      final pickupLat = (order['restaurantLatitude'] as num?)?.toDouble();
+      final pickupLng = (order['restaurantLongitude'] as num?)?.toDouble();
+      final dropLat = (order['customerLatitude'] as num?)?.toDouble();
+      final dropLng = (order['customerLongitude'] as num?)?.toDouble();
+
+      return {
+        'orderId': orderId,
+        'state': _mapOrderStatusToTrackingState(
+          order['status']?.toString() ?? '',
+        ),
+        'etaMinutes': null,
+        'updatedAt': DateTime.now().toIso8601String(),
+        'rider': {
+          'latitude': pickupLat,
+          'longitude': pickupLng,
+        },
+        'pickup': {
+          'latitude': pickupLat,
+          'longitude': pickupLng,
+          'address': order['restaurantName'],
+        },
+        'dropoff': {
+          'latitude': dropLat,
+          'longitude': dropLng,
+          'address': order['customerAddress'],
+        },
+      };
+    }
+
+    return null;
+  }
+
   Future<Map<String, dynamic>> getCurrentDeliveryTracking({
     required String token,
     required String orderId,
@@ -881,6 +1011,17 @@ class ApiClient {
 
     final data = jsonDecode(response.body) as Map<String, dynamic>;
     if (response.statusCode != 200) {
+      if (response.statusCode == 404 &&
+          (data['message']?.toString().contains('Route not found') ?? false)) {
+        final dashboard = await getMyDeliveryDashboard(token: token);
+        final fallbackTracking = _buildTrackingFallbackFromDashboard(
+          orderId: orderId,
+          dashboardPayload: dashboard,
+        );
+        if (fallbackTracking != null) {
+          return fallbackTracking;
+        }
+      }
       throw Exception(data['message'] ?? 'Failed to fetch delivery tracking');
     }
 

@@ -14,6 +14,7 @@ import '../../features/admin_panel/presentation/pages/admin_dashboard_screen.dar
 import '../../features/admin_panel/presentation/pages/admin_management_screens.dart';
 import '../../features/admin_panel/presentation/pages/restaurant_panel_screens.dart';
 import '../../features/admin_panel/presentation/pages/delivery_partner_screens.dart';
+import '../../features/delivery_chat/presentation/pages/delivery_chat_screen.dart';
 // Authentication Screens
 import '../../features/authentication/presentation/pages/login_screen.dart';
 import '../../features/authentication/presentation/pages/forgot_password_screen.dart';
@@ -37,6 +38,7 @@ class AppRoutes {
   static const String cart = '/cart';
   static const String checkout = '/checkout';
   static const String orderTracking = '/order-tracking';
+  static const String deliveryChat = '/delivery-chat/:conversationId';
   static const String userDashboard = '/dashboard';
   static const String orderHistory = '/dashboard/orders';
   static const String userFavorites = '/dashboard/favorites';
@@ -213,6 +215,27 @@ class AppRoutes {
           orderId: state.uri.queryParameters['orderId'],
         ),
         name: 'order-tracking',
+      ),
+      GoRoute(
+        path: deliveryChat,
+        builder: (context, state) {
+          final conversationId = state.pathParameters['conversationId'] ?? '';
+          final extra = state.extra;
+          final data =
+              extra is Map<String, dynamic> ? extra : <String, dynamic>{};
+
+          return DeliveryChatScreen(
+            conversationId: conversationId,
+            orderId: (data['orderId'] ?? conversationId).toString(),
+            currentUserId: (data['currentUserId'] ?? '').toString(),
+            currentUserName: (data['currentUserName'] ?? 'You').toString(),
+            riderName: (data['riderName'] ?? 'Delivery Partner').toString(),
+            riderAvatar: data['riderAvatar']?.toString(),
+            isCustomer:
+                data['isCustomer'] is bool ? data['isCustomer'] as bool : true,
+          );
+        },
+        name: 'delivery-chat',
       ),
       GoRoute(
         path: userDashboard,
