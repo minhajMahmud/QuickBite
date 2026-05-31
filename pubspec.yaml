@@ -8,7 +8,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-
+  
   # State Management & Providers
   provider: ^6.0.0
   riverpod: ^2.4.0
@@ -57,6 +57,7 @@ dependencies:
   
   # Maps (optional for delivery tracking)
   google_maps_flutter: ^2.9.0
+  geolocator: ^10.1.0
   
   # Payment Processing (placeholder)
   # flutter_stripe: ^8.0.0
@@ -64,7 +65,6 @@ dependencies:
   # Bottom Navigation
   convex_bottom_bar: ^3.1.0
   stylish_bottom_bar: ^1.1.1
-  geolocator: ^14.0.2
 
 dev_dependencies:
   flutter_test:
